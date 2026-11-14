@@ -1,6 +1,7 @@
 import { Languages, RotateCcw } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useApp } from '../context/AppContext'
+import logo from '../assets/logo.png'
 import BottomNav, { type TabId } from './BottomNav'
 
 interface Props {
@@ -9,23 +10,6 @@ interface Props {
   children: ReactNode
   /** Unseen price alerts (automatic mode); shown as a badge on the Alerts tab. */
   alertsBadge?: number
-}
-
-/** Viewfinder brackets around the letter ل: "a snapshot" (لُقطة). */
-function LogoMark() {
-  return (
-    <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-navy-800 shadow-inner">
-      <svg viewBox="0 0 40 40" className="absolute inset-0 h-full w-full" fill="none" aria-hidden="true">
-        <g stroke="#22C58B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M7 14V10a3 3 0 0 1 3-3h4" />
-          <path d="M26 7h4a3 3 0 0 1 3 3v4" />
-          <path d="M7 26v4a3 3 0 0 0 3 3h4" />
-          <path d="M33 26v4a3 3 0 0 1-3 3h-4" />
-        </g>
-      </svg>
-      <span className="relative text-xl leading-none font-bold text-gold">ل</span>
-    </div>
-  )
 }
 
 export default function Layout({ tab, onTabChange, children, alertsBadge }: Props) {
@@ -46,17 +30,14 @@ export default function Layout({ tab, onTabChange, children, alertsBadge }: Prop
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-[480px] flex-col bg-paper shadow-xl">
-      <header className="bg-khatam sticky top-0 z-20 rounded-b-[1.75rem] bg-navy px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-4 text-white shadow-soft">
+      <header className="sticky top-0 z-20 rounded-b-[1.75rem] bg-navy px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-4 text-white shadow-soft">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <LogoMark />
-            <div className="min-w-0 leading-none">
-              <h1 className="flex items-baseline gap-2">
-                <span className="text-[22px] font-bold">لُقطة</span>
-                <span className="text-sm font-semibold tracking-wide text-brand">Logta</span>
-              </h1>
-              <p className="mt-1.5 truncate text-[13px] font-medium text-white/70">{t('appTagline')}</p>
-            </div>
+          <div className="flex min-w-0 items-center gap-3">
+            {/* The logo is deep teal on transparent; brightness-0 + invert turns it white for the dark header. */}
+            <h1 className="shrink-0">
+              <img src={logo} alt="لُقطة Logta" width={63} height={48} className="h-12 w-auto brightness-0 invert" />
+            </h1>
+            <p className="min-w-0 text-[13px] leading-snug font-medium text-white/70">{t('appTagline')}</p>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
