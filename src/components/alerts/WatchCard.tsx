@@ -1,4 +1,4 @@
-import { Target, Trash2 } from 'lucide-react'
+import { BellRing, Clock, Target, Trash2, TrendingDown } from 'lucide-react'
 import { useState } from 'react'
 import { useApp } from '../../context/AppContext'
 import type { WatchCardData } from '../../types/api'
@@ -10,13 +10,15 @@ interface Props {
   entry: WatchCardData
   onRemove: (watchId: number) => void
   busy?: boolean
+  /** Browser-mode quick test: shown on watches whose target is not reached yet. */
+  onSimulateDrop?: (watchId: number) => void
 }
 
 /** An active price watch with target vs current best price and a two-step remove. */
-export default function WatchCard({ entry, onRemove, busy }: Props) {
+export default function WatchCard({ entry, onRemove, busy, onSimulateDrop }: Props) {
   const { t, lang } = useApp()
   const [confirming, setConfirming] = useState(false)
-  const { watch, product, currentBest } = entry
+  const { watch, product, currentBest, insight } = entry
   const now = currentBest?.priceKwd ?? null
   const reached = now != null && now <= watch.targetPriceKwd
   const gap = now != null && !reached ? round3(now - watch.targetPriceKwd) : null
@@ -68,6 +70,29 @@ export default function WatchCard({ entry, onRemove, busy }: Props) {
         </div>
       </div>
 
+      {insight && (
+        <div className="mt-2.5 rounded-xl bg-slate-50 px-3.5 py-2.5">
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold ${
+              insight.timing === 'buy_now' ? 'bg-brand-light text-brand-dark' : 'bg-amber-100 text-amber-900'
+            }`}
+          >
+            {insight.timing === 'buy_now' ? <BellRing size={14} aria-hidden="true" /> : <Clock size={14} aria-hidden="true" />}
+            {insight.timing === 'buy_now' ? t('watchTimingBuyNow') : t('watchTimingWait')}
+          </span>
+          <dl dir="ltr" className="mt-2 grid grid-cols-2 gap-2 text-center">
+            <div>
+              <dt className="text-[13px] text-slate-600">{t('alertStatsTitle')} · {t('alertStatLow')}</dt>
+              <dd className="text-[15px] font-bold text-ink">{formatKwd(insight.low)}</dd>
+            </div>
+            <div>
+              <dt className="text-[13px] text-slate-600">{t('alertStatsTitle')} · {t('alertStatHigh')}</dt>
+              <dd className="text-[15px] font-bold text-ink">{formatKwd(insight.high)}</dd>
+            </div>
+          </dl>
+        </div>
+      )}
+
       {currentBest && (
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
           <PriceBadge trust={currentBest.trust} isPromo={currentBest.isPromo} />
@@ -82,6 +107,12 @@ export default function WatchCard({ entry, onRemove, busy }: Props) {
         <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-200" role="presentation">
           <div className="h-full rounded-full bg-brand" style={{ width: `${pct}%` }} />
         </div>
+      )}
+
+      {onSimulateDrop && !reached && !confirming && (
+        <button type="button" disabled={busy} onClick={() => onSimulateDrop(watch.id)} className="btn btn-secondary mt-3 min-h-11 w-full text-sm">
+          <TrendingDown size={16} aria-hidden="true" /> {t('watchSimulateDrop')}
+        </button>
       )}
 
       {confirming && (

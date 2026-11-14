@@ -153,6 +153,15 @@ export interface WatchEntry {
 /** WatchEntry plus the current best price, which the frontend joins in (the watchlist response does not include it). */
 export interface WatchCardData extends WatchEntry {
   currentBest?: PriceCell | null
+  /** Browser mode only: 30-day range and timing advice computed from the local price history. */
+  insight?: WatchInsight | null
+}
+
+/** 30-day low/high and a "buy now" vs "wait" timing hint for a watch (browser mode). */
+export interface WatchInsight {
+  low: number
+  high: number
+  timing: 'buy_now' | 'wait'
 }
 
 // ---------------------------------------------------------------------------

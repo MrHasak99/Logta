@@ -33,6 +33,8 @@ export interface AlertsScreenProps {
   onSelectProduct: (product: ProductListItem | null) => void
   onSubmitWatch: (productId: number, targetKwd: number) => void
   onRetry: () => void
+  /** Browser mode only: fires a test alert for a watch that has not reached its target. */
+  onSimulateDrop?: (watchId: number) => void
 }
 
 /** Price Alerts, presentational: new and earlier alerts, active watches, and the add-watch sheet. */
@@ -100,7 +102,7 @@ export default function AlertsScreen(p: AlertsScreenProps) {
               <EmptyState icon={Bell} title={t('watchEmptyTitle')} body={t('watchEmptyBody')} />
             ) : (
               p.watches.map((w) => (
-                <WatchCard key={w.watch.id} entry={w} onRemove={p.onRemoveWatch} busy={p.busyWatchIds?.includes(w.watch.id)} />
+                <WatchCard key={w.watch.id} entry={w} onRemove={p.onRemoveWatch} busy={p.busyWatchIds?.includes(w.watch.id)} onSimulateDrop={p.onSimulateDrop} />
               ))
             )}
           </section>

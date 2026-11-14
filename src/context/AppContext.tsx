@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { clearAlertsStorage } from '../components/alerts/alertEngine'
 import { STORES, createSeedData } from '../data/seedData'
 import type { AppData, PriceEntry, Product, ScanRecord, ScanSummary, Store } from '../data/types'
 import { makeT, type Lang, type Translate } from '../i18n'
@@ -58,6 +59,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const resetDemoData = useCallback(() => {
     clearData()
+    clearAlertsStorage() // watches + alerts; the demo watches are re-seeded on the next evaluation pass
     const fresh = createSeedData()
     dataRef.current = fresh
     setData(fresh)

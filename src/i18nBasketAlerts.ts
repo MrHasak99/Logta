@@ -112,6 +112,9 @@ export const basketAlertsEn = {
   watchSaving: 'Saving…',
   watchSaveError: "We couldn't save this watch.",
   alertsBadgeLabel: '{n} new alerts',
+  watchSimulateDrop: 'Simulate Price Drop',
+  watchTimingBuyNow: 'Lowest in 30 days — Buy now',
+  watchTimingWait: 'Wait — Usually drops on Co-op offer days',
 
   // ---- automatic receipt result
   rcptSavedTitle: 'Receipt saved',
@@ -342,6 +345,9 @@ export const basketAlertsAr: Record<keyof typeof basketAlertsEn, string> = {
   watchSaving: 'جارٍ الحفظ…',
   watchSaveError: 'تعذّر حفظ هذه المراقبة.',
   alertsBadgeLabel: '{n} تنبيهات جديدة',
+  watchSimulateDrop: 'محاكاة انخفاض السعر',
+  watchTimingBuyNow: 'الأدنى خلال 30 يوماً — اشترِ الآن',
+  watchTimingWait: 'انتظر — عادةً ينخفض السعر في أيام عروض الجمعية',
 
   // ---- automatic receipt result
   rcptSavedTitle: 'تم حفظ الفاتورة',
