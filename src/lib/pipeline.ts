@@ -1,0 +1,184 @@
+/**
+ * Fully automatic scan pipeline — no human confirmation anywhere:
+ *
+ *   photo ─► LLM call 1 (extract lines) ─► alias cascade (exact / fuzzy, free)
+ *         ─► LLM call 2 only for lines still unresolved (pick a candidate or propose a new product)
+ *         ─► prices recorded (outliers quarantined) ─► alerts ─► unknown items collected
+ *         ─► autoPromoteReady(): items seen ≥3× by ≥2 users become products, earlier prices backfilled
+ *
+ * Every confident AI decision is written back as an alias, so the share of lines that need the LLM
+ * keeps falling as more receipts are scanned.
+ */
+import { eq } from 'drizzle-orm';
+import { getDb, type DB } from '../db/client.ts';
+import { categories, receiptLines, receipts, stores, users } from '../db/schema.ts';
+import { autoPromoteReady, type AutoPromotion, type PendingProposal } from './catalog-growth.ts';
+import { ingestReceipt, resolveLineWithLlm, type IngestedLine, type IngestReport } from './ingest.ts';
+import type { LlmClient } from './llm-client.ts';
+import type { LlmMatchChoice, ReceiptExtraction } from './llm-contract.ts';
+import { matchLine } from './matching.ts';
+import type { AlertResult } from './alerts.ts';
+
+export interface ScanOptions {
+  userId?: number | null;
+  storeId?: number | null;
+  /** null = no LLM configured: unresolved lines stay `needs_review` until retryNeedsReview() runs with one. */
+  llm: LlmClient | null;
+  now?: Date;
+  db?: DB;
+}
+
+export interface ScanReport extends IngestReport {
+  llm: string | null;
+  /** LLM calls made for this receipt (call 1 not included when the extraction was passed in). */
+  llmCalls: number;
+  llmErrors: string[];
+  autoPromoted: AutoPromotion[];
+}
+
+export class NoLlmConfiguredError extends Error {
+  constructor() {
+    super('No LLM API key configured (set OPENROUTER_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY)');
+  }
+}
+
+function categoryMaps(db: DB) {
+  const rows = db.select({ id: categories.id, slug: categories.slug, nameEn: categories.nameEn }).from(categories).all();
+  return { list: rows.map((r) => ({ slug: r.slug, nameEn: r.nameEn })), idBySlug: new Map(rows.map((r) => [r.slug, r.id])) };
+}
+
+function proposalFrom(choice: LlmMatchChoice, idBySlug: Map<string, number>): PendingProposal {
+  return {
+    nameEn: choice.proposed_name_en,
+    nameAr: choice.proposed_name_ar,
+    brand: choice.proposed_brand,
+    categoryId: choice.proposed_category ? (idBySlug.get(choice.proposed_category) ?? null) : null,
+    sizeValue: choice.proposed_size_value,
+    sizeUnit: choice.proposed_size_unit,
+  };
+}
+
+function recount(report: IngestReport): void {
+  report.counts = { alias_exact: 0, alias_fuzzy: 0, llm: 0, none: 0, needsLLM: 0 };
+  for (const l of report.lines) {
+    if (l.needsLLM) report.counts.needsLLM++;
+    else report.counts[l.method]++;
+  }
+  report.status = report.lines.some((l) => l.status === 'needs_review') || report.storeId == null ? 'partial' : 'processed';
+}
+
+/** Resolve one needs_review line with the LLM. Returns the finished line (or null if the LLM failed). */
+async function resolveWithLlm(
+  line: { lineId: number; rawText: string; candidates?: IngestedLine['candidates'] },
+  storeName: string | null,
+  llm: LlmClient,
+  cats: ReturnType<typeof categoryMaps>,
+  db: DB,
+  now: Date,
+): Promise<(IngestedLine & { alerts?: AlertResult[] }) | { error: string }> {
+  try {
+    const candidates = line.candidates ?? (() => {
+      const m = matchLine(line.rawText, { learn: false, db });
+      return m.needsLLM ? m.candidates : [];
+    })();
+    const choice = await llm.choose({ rawText: line.rawText, candidates, storeName, categories: cats.list });
+    return resolveLineWithLlm(line.lineId, choice.product_id, {
+      confidence: choice.confidence,
+      proposedNameEn: choice.proposed_name_en,
+      proposedNameAr: choice.proposed_name_ar,
+      proposal: proposalFrom(choice, cats.idBySlug),
+      now,
+      db,
+    });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Process an already-extracted receipt (e.g. from api/extract or a fixture) end-to-end. */
+export async function processExtraction(extraction: ReceiptExtraction, opts: ScanOptions): Promise<ScanReport> {
+  const db = opts.db ?? getDb();
+  const now = opts.now ?? new Date();
+  const base = ingestReceipt(extraction, { userId: opts.userId, storeId: opts.storeId, llmModel: opts.llm?.name ?? null, now, db });
+  const report: ScanReport = { ...base, llm: opts.llm?.name ?? null, llmCalls: 0, llmErrors: [], autoPromoted: [] };
+
+  if (opts.llm) {
+    const cats = categoryMaps(db);
+    for (let i = 0; i < report.lines.length; i++) {
+      const line = report.lines[i]!;
+      if (!line.needsLLM) continue;
+      report.llmCalls++;
+      const res = await resolveWithLlm(line, report.storeNameEn, opts.llm, cats, db, now);
+      if ('error' in res) {
+        report.llmErrors.push(`${line.rawText}: ${res.error}`);
+        continue;
+      }
+      const { alerts, ...finished } = res;
+      report.lines[i] = finished;
+      if (finished.aliasLearned) report.learnedAliases++;
+      if (finished.observation?.status === 'quarantined') report.quarantined++;
+      if (finished.pendingId != null && !report.pendingIds.includes(finished.pendingId)) report.pendingIds.push(finished.pendingId);
+      if (alerts) report.alerts.push(...alerts);
+    }
+  }
+
+  report.autoPromoted = autoPromoteReady({ now, db });
+  recount(report);
+  db.update(receipts).set({ status: report.status }).where(eq(receipts.id, report.receiptId)).run();
+  return report;
+}
+
+/** Photo → full pipeline. Throws NoLlmConfiguredError when no LLM is available (extraction needs it). */
+export async function processReceiptImage(imageDataUrl: string, opts: ScanOptions): Promise<ScanReport> {
+  if (!opts.llm) throw new NoLlmConfiguredError();
+  const extraction = await opts.llm.extract(imageDataUrl);
+  const report = await processExtraction(extraction, opts);
+  report.llmCalls++; // the extraction call
+  return report;
+}
+
+/**
+ * Finish lines left `needs_review` (LLM was down or not configured). Lines that now hit an alias learned
+ * since they were scanned are resolved without the LLM. Then runs auto-promotion.
+ */
+export async function retryNeedsReview(opts: { llm: LlmClient | null; limit?: number; now?: Date; db?: DB }): Promise<{ resolved: number; viaAlias: number; llmCalls: number; errors: string[]; autoPromoted: AutoPromotion[] }> {
+  const db = opts.db ?? getDb();
+  const now = opts.now ?? new Date();
+  const cats = categoryMaps(db);
+  const pending = db
+    .select({ line: receiptLines, receipt: receipts, storeName: stores.nameEn })
+    .from(receiptLines)
+    .innerJoin(receipts, eq(receipts.id, receiptLines.receiptId))
+    .leftJoin(stores, eq(stores.id, receipts.storeId))
+    .where(eq(receiptLines.status, 'needs_review'))
+    .limit(opts.limit ?? 100)
+    .all();
+  let resolved = 0, viaAlias = 0, llmCalls = 0;
+  const errors: string[] = [];
+  for (const { line, receipt, storeName } of pending) {
+    const m = matchLine(line.rawText, { storeId: receipt.storeId, now, db });
+    if (!m.needsLLM) {
+      resolveLineWithLlm(line.id, m.productId, { confidence: m.confidence, now, db });
+      resolved++;
+      viaAlias++;
+      continue;
+    }
+    if (!opts.llm) continue;
+    llmCalls++;
+    const res = await resolveWithLlm({ lineId: line.id, rawText: line.rawText, candidates: m.candidates }, storeName, opts.llm, cats, db, now);
+    if ('error' in res) errors.push(`${line.rawText}: ${res.error}`);
+    else resolved++;
+  }
+  return { resolved, viaAlias, llmCalls, errors, autoPromoted: autoPromoteReady({ now, db }) };
+}
+
+/** Anonymous per-device user (no auth). Creates the user on first sight. */
+export function getOrCreateUser(deviceId: string, opts: { displayName?: string; db?: DB } = {}): { id: number; created: boolean } {
+  const db = opts.db ?? getDb();
+  const clean = deviceId.trim().slice(0, 100);
+  if (!clean) throw new Error('deviceId required');
+  const existing = db.select({ id: users.id }).from(users).where(eq(users.deviceId, clean)).get();
+  if (existing) return { id: existing.id, created: false };
+  const row = db.insert(users).values({ deviceId: clean, displayName: opts.displayName?.slice(0, 60) || `Shopper ${clean.slice(0, 6)}` }).returning({ id: users.id }).get();
+  return { id: row.id, created: true };
+}

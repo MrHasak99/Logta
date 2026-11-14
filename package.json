@@ -16,7 +16,8 @@
     "demo:ingest": "tsx scripts/demo-ingest.ts",
     "test": "vitest run",
     "typecheck:server": "tsc -p tsconfig.server.json",
-    "demo:fresh": "npm run db:reset && npm run demo:ingest"
+    "demo:fresh": "npm run db:reset && npm run demo:ingest",
+    "server": "tsx server/index.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.5",

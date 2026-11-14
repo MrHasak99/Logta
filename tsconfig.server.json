@@ -27,7 +27,8 @@
     "scripts",
     "tests",
     "drizzle.config.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "server"
   ],
   "exclude": [
     "tests/extract-proxy.test.ts"

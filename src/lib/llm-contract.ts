@@ -85,9 +85,14 @@ export interface LlmMatchChoice {
   product_id: number | null;
   /** 0–1. Use ≥ 0.85 only when brand, product type AND size all agree. */
   confidence: number;
-  /** For unknown items (product_id null): a clean proposed name so the catalogue can grow. */
+  /** For unknown items (product_id null): a clean proposed product so the catalogue can grow by itself. */
   proposed_name_en: string | null;
   proposed_name_ar: string | null;
+  proposed_brand: string | null;
+  /** One of the category slugs given in the message. */
+  proposed_category: string | null;
+  proposed_size_value: number | null;
+  proposed_size_unit: 'g' | 'kg' | 'ml' | 'L' | 'pcs' | null;
 }
 
 export const LLM_MATCH_JSON_SCHEMA = {
@@ -95,33 +100,48 @@ export const LLM_MATCH_JSON_SCHEMA = {
   title: 'LlmMatchChoice',
   type: 'object',
   additionalProperties: false,
-  required: ['product_id', 'confidence', 'proposed_name_en', 'proposed_name_ar'],
+  required: ['product_id', 'confidence', 'proposed_name_en', 'proposed_name_ar', 'proposed_brand', 'proposed_category', 'proposed_size_value', 'proposed_size_unit'],
   properties: {
     product_id: { type: ['integer', 'null'] },
     confidence: { type: 'number', minimum: 0, maximum: 1 },
     proposed_name_en: { type: ['string', 'null'] },
     proposed_name_ar: { type: ['string', 'null'] },
+    proposed_brand: { type: ['string', 'null'] },
+    proposed_category: { type: ['string', 'null'] },
+    proposed_size_value: { type: ['number', 'null'], exclusiveMinimum: 0 },
+    proposed_size_unit: { enum: ['g', 'kg', 'ml', 'L', 'pcs', null] },
   },
 } as const;
 
 export const MATCH_SYSTEM_PROMPT = `You match one line from a Kuwaiti grocery receipt to a product catalogue. Return STRICT JSON only — no prose.
 
 You get the raw receipt text and a numbered list of candidate products (id, brand, English name, Arabic name, size).
-Output: {"product_id": number|null, "confidence": number, "proposed_name_en": string|null, "proposed_name_ar": string|null}
+Output: {"product_id": number|null, "confidence": number, "proposed_name_en": string|null, "proposed_name_ar": string|null, "proposed_brand": string|null, "proposed_category": string|null, "proposed_size_value": number|null, "proposed_size_unit": "g"|"kg"|"ml"|"L"|"pcs"|null}
 
 Rules:
 - Pick a candidate ONLY if it is the same product: same brand, same product type/variant (e.g. full-fat vs low-fat) and same size/pack. Receipt text is often abbreviated (e.g. "H/S" = Head & Shoulders, "F/F" = full fat, "BSMTI" = basmati, "CHKN" = chicken) or mixes Arabic and English.
 - If no candidate is the same product, return product_id null — never pick "the closest" item just to return something.
 - confidence: 0.9–1.0 when brand, type and size clearly agree; 0.6–0.85 when one detail is uncertain; below 0.6 → return null instead.
-- When product_id is null, propose a clean English and Arabic product name (natural Arabic as printed on Kuwaiti packaging), else set both to null.
-- Only use ids from the candidate list.`;
+- When product_id is null and the line IS a real grocery product, propose it so it can be added to the catalogue:
+  clean English name and natural Arabic name as printed on Kuwaiti packaging (include brand and size in both names),
+  the brand (or null for unbranded/fresh items), one category slug from the list provided, and the pack size
+  (value + unit: g, kg, ml, L or pcs; e.g. "4PC" → 4 pcs, "1LTR" → 1 L). If the size is not printed, use null.
+- When product_id is null and the line is NOT a product (deposit, bag charge, discount, service fee, gibberish), set every proposed_* field to null.
+- When product_id is not null, set every proposed_* field to null.
+- Only use ids from the candidate list and category slugs from the category list.`;
 
 /** Build the user message for call 2. */
-export function buildMatchUserMessage(rawText: string, candidates: MatchCandidate[], storeName?: string | null): string {
+export function buildMatchUserMessage(
+  rawText: string,
+  candidates: MatchCandidate[],
+  storeName?: string | null,
+  categories: { slug: string; nameEn: string }[] = [],
+): string {
   const list = candidates
     .map((c) => `- id ${c.productId}: ${c.brand ?? '(no brand)'} | ${c.nameEn} | ${c.nameAr} | size ${c.sizeLabel}`)
     .join('\n');
-  return `Receipt line: "${rawText}"${storeName ? `\nStore: ${storeName}` : ''}\n\nCandidates:\n${list || '(none)'}`;
+  const cats = categories.map((c) => `- ${c.slug}: ${c.nameEn}`).join('\n');
+  return `Receipt line: "${rawText}"${storeName ? `\nStore: ${storeName}` : ''}\n\nCandidates:\n${list || '(none)'}${cats ? `\n\nCategories (for proposed_category):\n${cats}` : ''}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -160,10 +180,20 @@ export function parseLlmMatchChoice(input: string | unknown, candidates: MatchCa
   const o = (raw ?? {}) as Record<string, unknown>;
   const id = isNum(o.product_id) && candidates.some((c) => c.productId === o.product_id) ? (o.product_id as number) : null;
   const conf = isNum(o.confidence) ? Math.max(0, Math.min(1, o.confidence)) : 0;
+  const str = (v: unknown, max = 120) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+  const units = ['g', 'kg', 'ml', 'L', 'pcs'] as const;
+  const unitRaw = typeof o.proposed_size_unit === 'string' ? o.proposed_size_unit : '';
+  const unit = units.find((u) => u === unitRaw) ?? units.find((u) => u.toLowerCase() === unitRaw.toLowerCase()) ?? null;
+  const size = numOrNull(o.proposed_size_value);
+  const proposing = id == null;
   return {
     product_id: id,
     confidence: id == null ? 0 : conf,
-    proposed_name_en: typeof o.proposed_name_en === 'string' ? o.proposed_name_en : null,
-    proposed_name_ar: typeof o.proposed_name_ar === 'string' ? o.proposed_name_ar : null,
+    proposed_name_en: proposing ? str(o.proposed_name_en) : null,
+    proposed_name_ar: proposing ? str(o.proposed_name_ar) : null,
+    proposed_brand: proposing ? str(o.proposed_brand, 60) : null,
+    proposed_category: proposing ? str(o.proposed_category, 60) : null,
+    proposed_size_value: proposing && size != null && size > 0 && unit ? size : null,
+    proposed_size_unit: proposing && size != null && size > 0 ? unit : null,
   };
 }
