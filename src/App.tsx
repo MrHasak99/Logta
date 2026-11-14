@@ -1,4 +1,4 @@
-import { Bell, ShoppingBasket } from 'lucide-react'
+import { Bell } from 'lucide-react'
 import { useState } from 'react'
 import { isApiMode } from './api/client'
 import { AppProvider } from './context/AppContext'
@@ -8,6 +8,7 @@ import AutoScanner from './components/AutoScanner'
 import BasketContainer from './components/basket/BasketContainer'
 import type { TabId } from './components/BottomNav'
 import Layout from './components/Layout'
+import BasketOptimizer from './components/optimizer/BasketOptimizer'
 import PlaceholderScreen from './components/PlaceholderScreen'
 import ReceiptScanner from './components/ReceiptScanner'
 
@@ -24,8 +25,8 @@ function App() {
       <Layout tab={tab} onTabChange={setTab} alertsBadge={isApiMode ? unseenAlerts : undefined}>
         {/* Scanner stays mounted so an in-progress scan survives tab switches. */}
         <div hidden={tab !== 'scanner'}>{isApiMode ? <AutoScanner onViewAlerts={() => setTab('alerts')} /> : <ReceiptScanner />}</div>
-        {tab === 'basket' &&
-          (isApiMode ? <BasketContainer /> : <PlaceholderScreen icon={ShoppingBasket} title="basketTitle" description="basketDesc" featureNumber={2} />)}
+        {/* API mode uses the server optimiser; otherwise the in-browser Smart Basket Optimizer runs on the local data. */}
+        {tab === 'basket' && (isApiMode ? <BasketContainer /> : <BasketOptimizer />)}
         {tab === 'alerts' &&
           (isApiMode ? <AlertsContainer onBadgeChange={refreshUnseen} /> : <PlaceholderScreen icon={Bell} title="alertsTitle" description="alertsDesc" featureNumber={3} />)}
       </Layout>

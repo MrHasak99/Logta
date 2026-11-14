@@ -6,8 +6,7 @@ import { getDb, type DB } from '../db/client.ts';
 import { listItems, products, shoppingLists, stores, users, type Store } from '../db/schema.ts';
 import { getPriceMatrix, type PriceMatrix } from './prices.ts';
 import { toBaseQty } from './normalize.ts';
-
-export interface LatLng { lat: number; lng: number }
+import { combinations, haversineKm, roundTripKm, type LatLng } from './geo.ts';
 
 export interface OptimizeOptions {
   /** Max stores in a plan (1–3, default 3). */
@@ -72,34 +71,9 @@ export interface BasketPlan {
   avgTrust: number;
 }
 
-const R_EARTH_KM = 6371;
-export function haversineKm(a: LatLng, b: LatLng): number {
-  const rad = (d: number) => (d * Math.PI) / 180;
-  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R_EARTH_KM * Math.asin(Math.sqrt(h));
-}
-
-/** Shortest round trip home → stores (any order) → home, straight-line km. Max 3 stores → ≤ 6 permutations. */
-export function roundTripKm(home: LatLng, points: LatLng[]): number {
-  if (!points.length) return 0;
-  const perms = (xs: LatLng[]): LatLng[][] => (xs.length <= 1 ? [xs] : xs.flatMap((x, i) => perms([...xs.slice(0, i), ...xs.slice(i + 1)]).map((p) => [x, ...p])));
-  let best = Infinity;
-  for (const order of perms(points)) {
-    let d = 0, prev = home;
-    for (const p of order) { d += haversineKm(prev, p); prev = p; }
-    d += haversineKm(prev, home);
-    best = Math.min(best, d);
-  }
-  return best;
-}
-
-export function combinations<T>(xs: T[], k: number): T[][] {
-  if (k === 0) return [[]];
-  if (xs.length < k) return [];
-  const [head, ...rest] = xs as [T, ...T[]];
-  return [...combinations(rest, k - 1).map((c) => [head, ...c]), ...combinations(rest, k)];
-}
+// Geometry helpers live in ./geo.ts (shared with the browser UI); re-exported to keep this module's public API.
+export { combinations, haversineKm, roundTripKm };
+export type { LatLng };
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
