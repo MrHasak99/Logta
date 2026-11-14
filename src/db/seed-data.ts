@@ -266,7 +266,7 @@ export const PRODUCTS: ProductSeed[] = [
     ['huggies-s4-66', 'Huggies', 'Huggies Extra Care Size 4 66 diapers', 'حفاضات هجيز مقاس ٤ ٦٦ حفاضة', 66, 'pcs', 1, 6.75, 'diapers_s4', ['HUGGIES S4 66S', '~حفاظات هجيز ٤'], true],
     ['molfix-s4-64', 'Molfix', 'Molfix Size 4 64 diapers', 'حفاضات Molfix مقاس ٤ ٦٤ حفاضة', 64, 'pcs', 1, 5.25, 'diapers_s4', ['MOLFIX S4 64S'], true],
     ['pampers-wipes-64', 'Pampers', 'Pampers Baby Wipes 64 pcs', 'مناديل مبللة بامبرز للأطفال ٦٤ منديل', 64, 'pcs', 1, 0.95, 'baby_wipes', ['PAMPERS WIPES 64S', '~مناديل مبللة']],
-    ['fine-baby-wipes-72', 'Fine', 'Fine Baby Wipes 72 pcs', 'مناديل مبللة فاين للأطفال ٧٢ منديل', 72, 'pcs', 1, 0.85, 'baby_wipes', ['FINE BABY WIPES 72S']],
+    ['fine-baby-wipes-72', 'Fine', 'Fine Baby Wipes 72 pcs', 'مناديل مبللة فاين للأطفال ٧٢ منديل', 72, 'pcs', 1, 0.85, 'baby_wipes', ['FINE BABY WIPES 72S', 'FINE BBY WIPES 72PC', '~مناديل فاين للأطفال']],
     ['johnsons-baby-shampoo-500ml', "Johnson's", "Johnson's Baby Shampoo 500ml", 'شامبو جونسون للأطفال ٥٠٠ مل', 500, 'ml', 1, 1.65, 'baby_shampoo_500ml', ['JOHNSONS BABY SHMP 500ML', '~شامبو جونسون']],
     ['nido-powder-1.8kg', 'Nido', 'Nido Fortified Milk Powder 1.8kg', 'حليب نيدو مجفف مدعم ١٫٨ كيلو', 1.8, 'kg', 1, 5.95, 'milk_powder_1.8kg', ['NIDO FORTIFIED 1.8KG', 'NIDO MILK PWD 1800G', '~حليب نيدو']],
   ]),

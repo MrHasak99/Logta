@@ -262,7 +262,10 @@ export function estimateCurrentPrice(rows: ObsRow[], volatility: Volatility, now
   const sourceMix: SourceMix = { receipt: 0, shelf_tag: 0, manual: 0, seed: 0, seedEstimate: 0, seedWebSnapshot: 0 };
   for (const r of used) {
     sourceMix[r.evidence]++;
-    if (r.evidence === 'seed') r.seedSource === 'web_snapshot' ? sourceMix.seedWebSnapshot++ : sourceMix.seedEstimate++;
+    if (r.evidence === 'seed') {
+      if (r.seedSource === 'web_snapshot') sourceMix.seedWebSnapshot++;
+      else sourceMix.seedEstimate++;
+    }
   }
   return {
     productId: latest.productId,
@@ -344,7 +347,8 @@ export function getPriceMatrix(productIds: number[], opts: { now?: Date; db?: DB
   for (const r of fetchAccepted(db, ids, null, now)) {
     const k = `${r.productId}:${r.storeId}`;
     const arr = grouped.get(k);
-    arr ? arr.push(r) : grouped.set(k, [r]);
+    if (arr) arr.push(r);
+    else grouped.set(k, [r]);
   }
   const prices: PriceMatrix['prices'] = {};
   for (const pid of ids) prices[pid] = {};

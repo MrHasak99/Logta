@@ -68,9 +68,10 @@ export function normalizeAlias(input: string): string {
   // multiplication signs used for packs: "6x330ml", "6*330", "6×330"
   s = s.replace(/(\d)\s*[x×*]\s*(\d)/g, '$1 x $2');
   // keep decimal points between digits, everything else non-alphanumeric → space
-  s = s.replace(/(\d)[.,](\d)/g, '$1\u0000$2');
-  s = s.replace(/[^\p{L}\p{N}\u0000]+/gu, ' ');
-  s = s.replace(/\u0000/g, '.');
+  // (U+E000 is a private-use placeholder for the decimal point)
+  s = s.replace(/(\d)[.,](\d)/g, '$1$2');
+  s = s.replace(/[^\p{L}\p{N}]+/gu, ' ');
+  s = s.replace(//g, '.');
   // split digits from letters on either side ("1l" → "1 l", "l1" → "l 1")
   s = s.replace(/(\d)(\p{L})/gu, '$1 $2').replace(/(\p{L})(\d)/gu, '$1 $2');
   const tokens = s
