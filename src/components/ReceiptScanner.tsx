@@ -64,12 +64,12 @@ export default function ReceiptScanner() {
   }
 
   return (
-    <div className="space-y-5 px-4 py-4">
+    <div className="space-y-6 px-4 py-6">
       {step.name === 'upload' && (
         <>
           <div>
-            <h2 className="text-lg font-extrabold text-navy">{t('scanTitle')}</h2>
-            <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{t('scanSubtitle')}</p>
+            <h2 className="text-2xl leading-snug font-bold text-ink">{t('scanTitle')}</h2>
+            <p className="mt-1.5 text-[15px] leading-relaxed text-slate-600">{t('scanSubtitle')}</p>
           </div>
           <ImageUploader source={source} onSourceChange={setSource} onScan={() => void handleScan()} />
         </>
@@ -89,7 +89,8 @@ export default function ReceiptScanner() {
 
       {step.name === 'success' && <SuccessSummary summary={step.summary} onReset={reset} />}
 
-      <RecentScansFeed />
+      {/* Keep the flow focused: the feed only shows on the home and success states. */}
+      {(step.name === 'upload' || step.name === 'success') && <RecentScansFeed />}
     </div>
   )
 }

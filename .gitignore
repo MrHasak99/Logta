@@ -30,3 +30,8 @@ dist-ssr
 .env.*
 !.env.example
 .vercel
+
+# Local SQLite database (rebuild with npm run db:reset)
+data/*.db
+data/*.db-wal
+data/*.db-shm

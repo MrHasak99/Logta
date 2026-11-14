@@ -1,6 +1,7 @@
 export type Category = 'Dairy' | 'Pantry' | 'Beverages' | 'Household'
 
-export type PriceSource = 'Receipt Scan' | 'Shelf Tag' | 'Initial Index'
+/** 'Demo Estimate' = invented seed price shown in the feed for the demo; never a real scan. */
+export type PriceSource = 'Receipt Scan' | 'Shelf Tag' | 'Initial Index' | 'Demo Estimate'
 
 export type DocumentType = 'receipt' | 'shelf_tag'
 

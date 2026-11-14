@@ -1,13 +1,43 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ */
+/* Logta | لُقطة design tokens                                          */
+/* Existing token names (brand / navy) are kept so untouched components */
+/* pick up the new brand automatically.                                 */
+/* ------------------------------------------------------------------ */
 @theme {
-  --color-brand: #10b981;
-  --color-brand-dark: #059669;
-  --color-brand-light: #d1fae5;
-  --color-navy: #0f172a;
-  --color-navy-800: #1e293b;
-  --color-navy-700: #334155;
-  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", sans-serif;
+  /* Brand */
+  --color-brand: #22c58b; /* Mint: accents, primary buttons */
+  --color-brand-dark: #0f5c4d; /* Primary green: text accents, hover */
+  --color-brand-light: #e3f6ee; /* Soft mint tint */
+  --color-navy: #073f35; /* Deep green: header, dark surfaces */
+  --color-navy-800: #0a4d41;
+  --color-navy-700: #0f5c4d;
+  --color-gold: #f2c14e; /* Highlights only: best price, new, verified */
+  --color-gold-light: #fdf3d6;
+  --color-gold-dark: #7a5a0c; /* Readable text on gold-light */
+  --color-paper: #f8f6f1; /* App background */
+  --color-ink: #1e2421; /* Body text */
+  --color-line: #e8e3d8; /* Warm hairline borders */
+
+  /* Warm neutrals: replaces Tailwind's cool slate so every screen turns warm */
+  --color-slate-50: #f8f6f1;
+  --color-slate-100: #f1eee6;
+  --color-slate-200: #e8e3d8;
+  --color-slate-300: #d6d0c2;
+  --color-slate-400: #a39e92;
+  --color-slate-500: #686b63;
+  --color-slate-600: #53564e;
+  --color-slate-700: #3d403a;
+  --color-slate-800: #2a2d28;
+  --color-slate-900: #1e2421;
+
+  /* Inter covers Latin, IBM Plex Sans Arabic covers Arabic glyphs. */
+  --font-sans: "Inter", "IBM Plex Sans Arabic", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", sans-serif;
+
+  --shadow-soft: 0 10px 30px -12px rgb(7 63 53 / 0.28);
+  --shadow-card: 0 1px 2px rgb(7 63 53 / 0.05), 0 8px 24px -12px rgb(7 63 53 / 0.18);
+  --shadow-nav: 0 -8px 30px -10px rgb(7 63 53 / 0.22);
 }
 
 html,
@@ -16,14 +46,110 @@ body,
   min-height: 100%;
 }
 
-body {
-  margin: 0;
-  background: #e2e8f0;
-  color: #0f172a;
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
+html {
+  -webkit-tap-highlight-color: transparent;
+  text-size-adjust: 100%;
 }
 
+body {
+  margin: 0;
+  background: #e9e4d8; /* warm surround on desktop; the app column is paper */
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Arabic needs a little more air and no negative tracking. */
+:lang(ar) body {
+  line-height: 1.7;
+  letter-spacing: 0;
+}
+
+/* Visible keyboard focus everywhere. */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared component classes                                            */
+/* ------------------------------------------------------------------ */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 3rem;
+    padding: 0 1.25rem;
+    border-radius: 0.875rem;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+    transition:
+      background-color 0.18s ease,
+      color 0.18s ease,
+      border-color 0.18s ease,
+      transform 0.12s ease,
+      box-shadow 0.18s ease;
+  }
+  .btn:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .btn-primary {
+    background: var(--color-brand);
+    color: var(--color-navy);
+    box-shadow: 0 8px 18px -8px rgb(34 197 139 / 0.75);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-brand-dark);
+    color: #fff;
+  }
+
+  .btn-secondary {
+    background: #fff;
+    color: var(--color-brand-dark);
+    border: 1.5px solid var(--color-brand-dark);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--color-brand-light);
+  }
+
+  .btn-on-dark {
+    background: rgb(255 255 255 / 0.1);
+    color: #fff;
+    border: 1px solid rgb(255 255 255 / 0.18);
+  }
+  .btn-on-dark:hover:not(:disabled) {
+    background: rgb(255 255 255 / 0.18);
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid var(--color-line);
+    border-radius: 1.25rem;
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Subtle eight-point star (khatam) pattern for dark surfaces. */
+  .bg-khatam {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='0 0 44 44'%3E%3Cg fill='none' stroke='white' stroke-opacity='0.07' stroke-width='1'%3E%3Crect x='12' y='12' width='20' height='20'/%3E%3Crect x='12' y='12' width='20' height='20' transform='rotate(45 22 22)'/%3E%3C/g%3E%3C/svg%3E");
+    background-size: 44px 44px;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Animations                                                          */
+/* ------------------------------------------------------------------ */
 @keyframes scan-line {
   0% {
     top: 0%;
@@ -53,4 +179,62 @@ body {
 
 .animate-pop-in {
   animation: pop-in 0.35s ease-out both;
+}
+
+@keyframes fade-up {
+  0% {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.4s ease-out both;
+}
+
+@keyframes float-soft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.animate-float-soft {
+  animation: float-soft 3.6s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+.animate-progress-slide {
+  animation: progress-slide 1.5s ease-in-out infinite;
+}
+
+/* Progress bars slide the other way in RTL. */
+:dir(rtl) .animate-progress-slide {
+  animation-direction: reverse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
