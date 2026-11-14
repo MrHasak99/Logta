@@ -19,10 +19,10 @@ export default function BottomNav({ active, onChange }: Props) {
   const { t } = useApp()
   return (
     <nav
-      className="fixed bottom-0 left-1/2 z-30 w-full max-w-[480px] -translate-x-1/2 border-t border-slate-200 bg-white/95 backdrop-blur"
+      className="fixed bottom-0 left-1/2 z-30 w-full max-w-[480px] -translate-x-1/2 rounded-t-3xl border-t border-line bg-white/95 shadow-nav backdrop-blur"
       aria-label="Main"
     >
-      <ul className="flex">
+      <ul className="flex px-2 pt-2 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
         {TABS.map(({ id, label, icon: Icon }) => {
           const isActive = id === active
           return (
@@ -31,18 +31,18 @@ export default function BottomNav({ active, onChange }: Props) {
                 type="button"
                 onClick={() => onChange(id)}
                 aria-current={isActive ? 'page' : undefined}
-                className={`flex w-full flex-col items-center gap-0.5 px-2 pt-2 pb-3 text-[11px] font-semibold transition-colors ${
-                  isActive ? 'text-brand-dark' : 'text-slate-500 hover:text-navy'
+                className={`group flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-2xl px-1 text-xs transition-colors ${
+                  isActive ? 'font-bold text-brand-dark' : 'font-medium text-slate-500 hover:text-brand-dark'
                 }`}
               >
                 <span
-                  className={`flex h-7 w-12 items-center justify-center rounded-full transition-colors ${
-                    isActive ? 'bg-brand-light' : ''
+                  className={`flex h-8 w-14 items-center justify-center rounded-full transition-all duration-200 ${
+                    isActive ? 'bg-brand text-navy shadow-[0_6px_14px_-6px_rgb(34_197_139/0.8)]' : 'group-hover:bg-brand-light'
                   }`}
                 >
-                  <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+                  <Icon size={20} strokeWidth={isActive ? 2.5 : 2} aria-hidden="true" />
                 </span>
-                {t(label)}
+                <span className="max-w-full truncate leading-tight">{t(label)}</span>
               </button>
             </li>
           )
