@@ -7,6 +7,8 @@ interface Props {
   tab: TabId
   onTabChange: (tab: TabId) => void
   children: ReactNode
+  /** Unseen price alerts (automatic mode); shown as a badge on the Alerts tab. */
+  alertsBadge?: number
 }
 
 /** Viewfinder brackets around the letter ل: "a snapshot" (لُقطة). */
@@ -26,7 +28,7 @@ function LogoMark() {
   )
 }
 
-export default function Layout({ tab, onTabChange, children }: Props) {
+export default function Layout({ tab, onTabChange, children, alertsBadge }: Props) {
   const { t, toggleLang, resetDemoData } = useApp()
   const [confirmOpen, setConfirmOpen] = useState(false)
 
@@ -80,7 +82,7 @@ export default function Layout({ tab, onTabChange, children }: Props) {
       </header>
 
       <main className="flex-1 pb-32">{children}</main>
-      <BottomNav active={tab} onChange={onTabChange} />
+      <BottomNav active={tab} onChange={onTabChange} alertsBadge={alertsBadge} />
 
       {confirmOpen && (
         <div

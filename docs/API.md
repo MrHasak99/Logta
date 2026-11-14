@@ -122,7 +122,18 @@ Each price has `priceKwd, trust (0–1), lastObservedAt, observationCount, isPro
 - **Q7: trust values (measured on the seed):** prices from estimates only fall between **0.38 and 0.58** (median 0.56). Prices with a recent receipt are typically **0.80–0.96**. Demo basket plans show `avgTrust` ≈ 0.43–0.47. Suggested buckets: **< 0.6 "Estimate"**, **0.6–0.8 "Recent"**, **≥ 0.8 "Verified"**.
 - **Q8: hosting:** not deployed yet. It needs a persistent host (Replit/Railway/Render with disk/VM) with the AI key and `ALLOWED_ORIGINS` set. Until then, run `npm run server` on a laptop on the same Wi-Fi as the demo device.
 
-## Hooking up the existing UI (when the team is ready)
+## The UI is wired (automatic mode)
+
+Set **`VITE_API_BASE`** (e.g. `https://<app>.replit.app`) in Vercel or `.env.local` and rebuild. The app then uses:
+- `src/components/AutoScanner.tsx`: photo/sample → `/api/scan` or `/api/ingest` → result screen (no confirmation step), polls
+  waiting lines, store picker for partial receipts, error screens with Retry-After countdown, "Your recent scans".
+- `src/components/basket/BasketContainer.tsx`: search, basket (kept in localStorage), GPS or area location, `/api/optimize`.
+- `src/components/alerts/AlertsContainer.tsx`: alerts, watches (+ current best price), add/remove watch, mark seen; nav badge via `useUnseenAlertCount`.
+- `src/api/client.ts`: anonymous `deviceId`, typed errors, all endpoints.
+
+Without `VITE_API_BASE` the original local/manual app runs unchanged, so a deploy without a reachable server never breaks.
+
+## Hooking up the existing UI (reference)
 1. Generate and keep a `deviceId` in localStorage.
 2. Scanner: send the photo to `POST {API}/api/scan` (or keep `api/extract` and send its JSON to `/api/ingest`).
    Show the report instead of the confirmation screen. An optional "report a mistake" can come later.
