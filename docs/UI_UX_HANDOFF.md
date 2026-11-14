@@ -43,7 +43,7 @@ Branch: `ui-ux`. Presentation layer only: no changes to services, context, data 
 2. **Scanning** (`ScanningAnimation`): receipt with a scan line, plus the status text.
 3. **Review** (`VerificationTable`): receipt details card, ready / needs-attention counts, one card per line (green = matched, amber = check, red = needs match or price), inline guidance, and a sticky confirm bar. Validation is unchanged: confirm is enabled only with a store, at least one line, and every line matched with a price above 0. Low-confidence lines (below 70) are flagged but do not block saving.
 4. **Success** (`SuccessSummary`): added / updated counts and a price-change list built from the real deltas, plus a sticky "Scan another" button.
-5. **Recent verified prices** (`RecentScansFeed`): shown on the home and success states only.
+5. **Recent verified prices** (`RecentScansFeed`): shown on the home and success states only. Two groups: verified scans (receipt / shelf-tag badges, confidence, time) and clearly labelled demo estimates.
 6. **Basket Optimizer / Price Alerts** (`PlaceholderScreen`): branded "Coming soon" cards. Replace the usage in `App.tsx` when the features land.
 
 ## Navigation and layout behavior
@@ -59,7 +59,7 @@ All UI copy is in `src/i18n.ts` (`en` + `ar`, typed by `TKey`). Add every new st
 
 ## Known limitations
 
-- **Recent verified prices still uses the original styling.** A teammate changed it on `origin/database` (demo-estimate labelling), so it was deliberately not restyled here to avoid a conflict. Restyle it after merging that branch.
+- **Recent verified prices** (`RecentScansFeed`) is restyled on top of the `origin/database` demo-estimate labelling: real scans and seeded demo estimates are shown in separate groups, and demo rows carry no confidence or timestamp. The demo group is collapsed to 4 rows with a Show all toggle.
 - Default language remains English unless one is saved (`utils/storage.ts`, out of UI scope).
 - `Take Photo` needs a real phone to open the camera; desktop falls back to the file picker.
 - Low-confidence lines only appear with live AI output; the built-in samples all match at 98%.
