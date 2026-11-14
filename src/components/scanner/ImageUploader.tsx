@@ -2,6 +2,7 @@ import { Camera, ChevronRight, ImagePlus, LoaderCircle, ScanSearch, Sparkles, X 
 import { useRef, useState, type DragEvent } from 'react'
 import { useApp } from '../../context/AppContext'
 import type { TKey } from '../../i18n'
+import CameraCapture from './CameraCapture'
 import { MOCK_RECEIPTS, type MockReceipt } from '../../data/mockReceipts'
 import { ACCEPTED_TYPES, compressImage } from '../../utils/image'
 
@@ -27,6 +28,7 @@ export default function ImageUploader({ source, onSourceChange, onScan }: Props)
   const uploadRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState('')
+  const [cameraOpen, setCameraOpen] = useState(false)
   const [busy, setBusy] = useState<'camera' | 'upload' | null>(null)
 
   const sampleLabel = (r: MockReceipt) => (SAMPLE_LABEL_KEYS[r.id] ? t(SAMPLE_LABEL_KEYS[r.id]) : r.label)
@@ -45,6 +47,13 @@ export default function ImageUploader({ source, onSourceChange, onScan }: Props)
     } finally {
       setBusy(null)
     }
+  }
+
+  // Take Photo: open a live camera view; fall back to the native capture input when the
+  // browser has no camera API (or it is blocked), so the button always tries the camera first.
+  const openCamera = () => {
+    if (typeof navigator.mediaDevices?.getUserMedia === 'function') setCameraOpen(true)
+    else cameraRef.current?.click()
   }
 
   const onDrop = (e: DragEvent) => {
@@ -105,7 +114,7 @@ export default function ImageUploader({ source, onSourceChange, onScan }: Props)
               <h3 className="text-lg font-bold text-ink">{dragging ? t('dropTitle') : t('captureTitle')}</h3>
               <p className="mx-auto mt-1 max-w-[280px] text-sm leading-relaxed text-slate-500">{t('captureHint')}</p>
 
-              {/* Take Photo opens the rear camera on phones; Upload Image opens the gallery / file picker. */}
+              {/* Take Photo opens a live camera view (this input is only its fallback); Upload Image opens the gallery / file picker. */}
               <input
                 ref={cameraRef}
                 type="file"
@@ -126,7 +135,7 @@ export default function ImageUploader({ source, onSourceChange, onScan }: Props)
                 <button
                   type="button"
                   disabled={busy !== null}
-                  onClick={() => cameraRef.current?.click()}
+                  onClick={openCamera}
                   className="btn btn-primary min-h-14 w-full text-base"
                 >
                   {busy === 'camera' ? (
@@ -151,6 +160,20 @@ export default function ImageUploader({ source, onSourceChange, onScan }: Props)
                 </button>
               </div>
               <p className="mt-3 text-sm text-slate-500">{t('dropHint')}</p>
+
+              {cameraOpen && (
+                <CameraCapture
+                  onClose={() => setCameraOpen(false)}
+                  onUnavailable={() => {
+                    setCameraOpen(false)
+                    cameraRef.current?.click()
+                  }}
+                  onCapture={(file) => {
+                    setCameraOpen(false)
+                    void handleFile(file, 'camera')
+                  }}
+                />
+              )}
             </div>
           </div>
 
