@@ -239,6 +239,12 @@ export const alerts = sqliteTable('alerts', {
   seen: bool('seen').notNull().default(false),
   messageEn: text('message_en').notNull(),
   messageAr: text('message_ar').notNull(),
+  /** 'buy_now' (within 3% of the 30-day low) or 'lower_seen_recently'. Null on alerts created before migration 0003. */
+  hint: text('hint', { enum: ['buy_now', 'lower_seen_recently'] }),
+  /** 30-day stats (all stores) at the time the alert fired. */
+  statMinKwd: real('stat_min_kwd'),
+  statAvgKwd: real('stat_avg_kwd'),
+  statMaxKwd: real('stat_max_kwd'),
 });
 
 // ---------- row types ----------

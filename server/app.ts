@@ -26,8 +26,9 @@ import {
   stores,
   watchlist,
 } from '../src/db/schema.ts';
-import { getAlertsForUser, markAlertSeen } from '../src/lib/alerts.ts';
+import { deactivateWatch, getAlertsForUser, markAlertSeen } from '../src/lib/alerts.ts';
 import { listPending } from '../src/lib/catalog-growth.ts';
+import { getReceipt, listReceipts, recentPrices } from '../src/lib/receipts.ts';
 import type { LlmClient } from '../src/lib/llm-client.ts';
 import { parseReceiptExtraction } from '../src/lib/llm-contract.ts';
 import { normalizeAlias } from '../src/lib/normalize.ts';
@@ -154,7 +155,7 @@ export function createApp(opts: AppOptions): Server {
 
       if (method === 'OPTIONS') {
         if (!cors['Access-Control-Allow-Origin']) throw new HttpError(403, 'Origin not allowed');
-        res.writeHead(204, { ...cors, 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token', 'Access-Control-Max-Age': '600' });
+        res.writeHead(204, { ...cors, 'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token', 'Access-Control-Max-Age': '600' });
         return res.end();
       }
       // Browsers from other sites are refused outright; non-browser callers (no Origin) may read but not scan.
@@ -293,6 +294,30 @@ export function createApp(opts: AppOptions): Server {
         if (!own) throw new HttpError(404, 'Alert not found');
         markAlertSeen(id, db());
         return ok({ ok: true });
+      }
+
+      // remove a watch: DELETE /api/watchlist/:id?deviceId=…  (or POST /api/watchlist/:id/delete {deviceId})
+      const watchDel = /^\/api\/watchlist\/(\d+)(\/delete)?$/.exec(path);
+      if (watchDel && ((method === 'DELETE' && !watchDel[2]) || (method === 'POST' && watchDel[2]))) {
+        const userId = method === 'DELETE' ? user(url.searchParams) : user(await readJson(req, MAX_JSON_BODY));
+        if (!deactivateWatch(int(watchDel[1], 'watchId'), userId, db())) throw new HttpError(404, 'Watch not found');
+        return ok({ ok: true });
+      }
+
+      // ---------------- receipts & real-scan feed
+      if (method === 'GET' && path === '/api/receipts') {
+        const userId = user(url.searchParams);
+        return ok(listReceipts(userId, { limit: optInt(url.searchParams.get('limit'), 'limit') ?? 20, db: db() }));
+      }
+      const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(path);
+      if (method === 'GET' && receiptMatch) {
+        const userId = user(url.searchParams);
+        const r = getReceipt(int(receiptMatch[1], 'receiptId'), userId, db());
+        if (!r) throw new HttpError(404, 'Receipt not found');
+        return ok(r);
+      }
+      if (method === 'GET' && path === '/api/prices/recent') {
+        return ok(recentPrices({ limit: optInt(url.searchParams.get('limit'), 'limit') ?? 20, db: db() }));
       }
 
       // ---------------- admin / maintenance

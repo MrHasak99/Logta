@@ -92,8 +92,16 @@ Each price has `priceKwd, trust (0–1), lastObservedAt, observationCount, isPro
 |---|---|---|
 | `POST /api/watchlist` | `{ deviceId, productId, targetPriceKwd }` | watch (201) |
 | `GET /api/watchlist?deviceId=` | | active watches with products |
-| `GET /api/alerts?deviceId=&unseen=1` | | alerts (bilingual `messageEn` / `messageAr`) |
+| `DELETE /api/watchlist/:id?deviceId=` (or `POST /api/watchlist/:id/delete {deviceId}`) | | `{ ok: true }`; 404 if it isn't that device's active watch. Past alerts are kept |
+| `GET /api/alerts?deviceId=&unseen=1` | | newest first: `{ alert: { id, seen, triggeredAt, messageEn, messageAr, … }, watch, product: { id, nameEn, nameAr, sizeValue, sizeUnit }, store: { id, nameEn, nameAr }, priceKwd, observedAt, hint: 'buy_now' | 'lower_seen_recently', stats: { min, avg, max } }` |
 | `POST /api/alerts/:id/seen` | `{ deviceId }` | `{ ok: true }` |
+
+### Receipts & real-scan feed
+| method & path | returns |
+|---|---|
+| `GET /api/receipts?deviceId=&limit=` | the device's scans, newest first: `{ id, status, store, storeTextRaw, purchasedAt, uploadedAt, totalKwd, summary: { lines, saved, held, waiting, newItems } }` |
+| `GET /api/receipts/:id?deviceId=` | the same plus `lines[]`: `{ lineId, rawText, qty, unitPriceKwd, status, method, confidence, product: {id,nameEn,nameAr} | null, observation: {id, status} | null }`. Poll this (e.g. every 30–60 s) to see "waiting" lines get finished. 404 for other devices |
+| `GET /api/prices/recent?limit=` | live feed of **real** prices from receipts/shelf tags (seed estimates excluded; quarantined prices excluded), one row per product × store: `{ observationId, product, store, priceKwd, previousPriceKwd, observedAt, evidence, isPromo }` |
 
 ### Health, stats, admin
 | method & path | returns |
@@ -102,6 +110,17 @@ Each price has `priceKwd, trust (0–1), lastObservedAt, observationCount, isPro
 | `GET /api/stats` | catalogue size (`grownFromReceipts`), aliases (`learned`), receipts, observations by evidence, quarantined, pending, **`last7Days.aiShare` / `freeShare`** |
 | `POST /api/admin/retry` | finish `needs_review` lines + auto-promote (admin) |
 | `POST /api/admin/pending` | unknown items still collecting sightings (admin) |
+
+## Answers to the UI spec's open questions (docs/UI_UX_AUTO_PIPELINE_SPEC.md §9)
+
+- **Q1: `autoPromoted[]` items:** `{ pendingId, rawText, action: 'created' | 'merged', productId, productNameEn, backfilledLines, backfilledObservations }`. `merged` means the receipt text turned out to be an existing product and was added as its alias.
+- **Q2: recent scans:** `GET /api/prices/recent` (everyone's real prices) and `GET /api/receipts?deviceId=` (this device's scans).
+- **Q3: receipt status later:** `GET /api/receipts/:id?deviceId=`.
+- **Q4: remove a watch:** `DELETE /api/watchlist/:id?deviceId=`.
+- **Q5: cancelling:** the server keeps processing after the client disconnects, so **a cancelled scan is still saved**. Don't auto-resend after a cancel, or the receipt is counted twice. Show it under "Your recent scans" via `GET /api/receipts`.
+- **Q6: `GET /api/stores` rows:** `{ id, slug, nameEn, nameAr, type: 'coop'|'hypermarket'|'supermarket'|'online', areaEn, areaAr, lat, lng, deliveryFeeKwd, minOrderKwd, coordsApproximate }`. The area fields are `areaEn` / `areaAr`, not `area`. The online store (Taw9eel) has `lat/lng = null`, a delivery fee of 0.750 and a minimum order of 5.000.
+- **Q7: trust values (measured on the seed):** prices from estimates only fall between **0.38 and 0.58** (median 0.56). Prices with a recent receipt are typically **0.80–0.96**. Demo basket plans show `avgTrust` ≈ 0.43–0.47. Suggested buckets: **< 0.6 "Estimate"**, **0.6–0.8 "Recent"**, **≥ 0.8 "Verified"**.
+- **Q8: hosting:** not deployed yet. It needs a persistent host (Replit/Railway/Render with disk/VM) with the AI key and `ALLOWED_ORIGINS` set. Until then, run `npm run server` on a laptop on the same Wi-Fi as the demo device.
 
 ## Hooking up the existing UI (when the team is ready)
 1. Generate and keep a `deviceId` in localStorage.

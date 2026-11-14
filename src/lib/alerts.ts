@@ -65,7 +65,7 @@ export function checkAlerts(newObservation: PriceObservation, opts: { now?: Date
 
     const alert = db
       .insert(alerts)
-      .values({ watchlistId: w.id, priceObservationId: newObservation.id, triggeredAt: now, seen: false, messageEn, messageAr })
+      .values({ watchlistId: w.id, priceObservationId: newObservation.id, triggeredAt: now, seen: false, messageEn, messageAr, hint, statMinKwd: stats.min, statAvgKwd: stats.avg, statMaxKwd: stats.max })
       .returning()
       .get();
     results.push({ alert, watchlistId: w.id, userId: w.userId, hint, stats: { min: stats.min, avg: stats.avg, max: stats.max } });
@@ -74,15 +74,49 @@ export function checkAlerts(newObservation: PriceObservation, opts: { now?: Date
 }
 
 /** Unseen alerts for a user (newest first) — for the notifications UI. */
-export function getAlertsForUser(userId: number, opts: { unseenOnly?: boolean; db?: DB } = {}) {
+export interface UserAlert {
+  alert: Alert;
+  watch: typeof watchlist.$inferSelect;
+  product: { id: number; nameEn: string; nameAr: string; sizeValue: number; sizeUnit: string };
+  store: { id: number; nameEn: string; nameAr: string };
+  /** The price that triggered the alert. */
+  priceKwd: number;
+  observedAt: Date;
+  hint: 'buy_now' | 'lower_seen_recently' | null;
+  stats: { min: number; avg: number; max: number } | null;
+}
+
+/** A user's alerts (newest first), with product, store, triggering price, hint and 30-day stats. */
+export function getAlertsForUser(userId: number, opts: { unseenOnly?: boolean; db?: DB } = {}): UserAlert[] {
   const db = opts.db ?? getDb();
   return db
-    .select({ alert: alerts, watch: watchlist })
+    .select({
+      alert: alerts,
+      watch: watchlist,
+      product: { id: products.id, nameEn: products.nameEn, nameAr: products.nameAr, sizeValue: products.sizeValue, sizeUnit: products.sizeUnit },
+      store: { id: stores.id, nameEn: stores.nameEn, nameAr: stores.nameAr },
+      priceKwd: priceObservations.priceKwd,
+      observedAt: priceObservations.observedAt,
+    })
     .from(alerts)
     .innerJoin(watchlist, eq(watchlist.id, alerts.watchlistId))
+    .innerJoin(priceObservations, eq(priceObservations.id, alerts.priceObservationId))
+    .innerJoin(products, eq(products.id, watchlist.productId))
+    .innerJoin(stores, eq(stores.id, priceObservations.storeId))
     .where(and(eq(watchlist.userId, userId), opts.unseenOnly ? eq(alerts.seen, false) : undefined))
     .orderBy(desc(alerts.triggeredAt))
-    .all();
+    .all()
+    .map((r) => ({
+      ...r,
+      hint: r.alert.hint ?? null,
+      stats: r.alert.statMinKwd != null && r.alert.statAvgKwd != null && r.alert.statMaxKwd != null ? { min: r.alert.statMinKwd, avg: r.alert.statAvgKwd, max: r.alert.statMaxKwd } : null,
+    }));
+}
+
+/** Stop watching (soft delete: the watch is deactivated, its past alerts are kept). Returns false if not the user's watch. */
+export function deactivateWatch(watchId: number, userId: number, db: DB = getDb()): boolean {
+  const res = db.update(watchlist).set({ active: false }).where(and(eq(watchlist.id, watchId), eq(watchlist.userId, userId), eq(watchlist.active, true))).run();
+  return res.changes > 0;
 }
 
 export function markAlertSeen(alertId: number, db: DB = getDb()): void {

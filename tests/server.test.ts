@@ -118,3 +118,58 @@ describe('API server', () => {
     expect((await call('/api/nope')).status).toBe(404);
   });
 });
+
+describe('API server: alerts detail, watch delete, receipts, recent prices', () => {
+  const ingest = (deviceId: string, store: string, lines: [string, number][]) =>
+    call('/api/ingest', { method: 'POST', body: JSON.stringify({ deviceId, extraction: { store_text: store, purchased_at: null, total_kwd: null, lines: lines.map(([raw_text, p]) => ({ raw_text, qty: 1, unit_price_kwd: p, line_total_kwd: p })) } }) });
+
+  it('GET /api/alerts includes product, store, triggering price, hint and 30-day stats', async () => {
+    const id = db.select().from(products).where(eq(products.slug, 'tilda-basmati-5kg')).get()!.id;
+    await call('/api/watchlist', { method: 'POST', body: JSON.stringify({ deviceId: 'phone-5', productId: id, targetPriceKwd: 4.6 }) });
+    expect((await ingest('phone-6', 'SALWA CO-OP', [['TILDA PURE BASMATI 5KG', 4.45]])).status).toBe(200);
+    const alerts = (await (await call('/api/alerts?deviceId=phone-5')).json()) as {
+      product: { nameEn: string; nameAr: string }; store: { nameEn: string }; priceKwd: number; hint: string; stats: { min: number; avg: number; max: number };
+    }[];
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatchObject({ product: { nameEn: 'Tilda Pure Basmati Rice 5kg' }, store: { nameEn: 'Salwa Co-op' }, priceKwd: 4.45 });
+    expect(['buy_now', 'lower_seen_recently']).toContain(alerts[0]!.hint);
+    expect(alerts[0]!.stats.min).toBeLessThanOrEqual(4.45);
+    expect(alerts[0]!.stats.max).toBeGreaterThanOrEqual(alerts[0]!.stats.avg);
+    expect(alerts[0]!.product.nameAr).toContain('تيلدا');
+  });
+
+  it('DELETE /api/watchlist/:id removes only your own watch (POST …/delete also works)', async () => {
+    const id = db.select().from(products).where(eq(products.slug, 'nutella-350g')).get()!.id;
+    const w = (await (await call('/api/watchlist', { method: 'POST', body: JSON.stringify({ deviceId: 'phone-7', productId: id, targetPriceKwd: 1.2 }) })).json()) as { id: number };
+    expect((await call('/api/watchlist', { method: 'OPTIONS' })).headers.get('access-control-allow-methods')).toContain('DELETE');
+    expect((await call(`/api/watchlist/${w.id}?deviceId=someone-else`, { method: 'DELETE' })).status).toBe(404);
+    expect((await call(`/api/watchlist/${w.id}?deviceId=phone-7`, { method: 'DELETE' })).status).toBe(200);
+    expect(await (await call('/api/watchlist?deviceId=phone-7')).json()).toEqual([]);
+    expect((await call(`/api/watchlist/${w.id}?deviceId=phone-7`, { method: 'DELETE' })).status).toBe(404);
+    const w2 = (await (await call('/api/watchlist', { method: 'POST', body: JSON.stringify({ deviceId: 'phone-7', productId: id, targetPriceKwd: 1.1 }) })).json()) as { id: number };
+    expect((await call(`/api/watchlist/${w2.id}/delete`, { method: 'POST', body: JSON.stringify({ deviceId: 'phone-7' }) })).status).toBe(200);
+  });
+
+  it('GET /api/receipts and /api/receipts/:id show a device\'s scans with line statuses', async () => {
+    const r = (await (await ingest('phone-8', 'LULU HYPERMARKET', [['ARIEL AUTO 2.5KG', 3.05], ['KDD FF MILK 1L', 2.8], ['MYSTERY THING 9X', 1]])).json()) as { receiptId: number };
+    const list = (await (await call('/api/receipts?deviceId=phone-8')).json()) as { id: number; summary: Record<string, number>; store: { nameEn: string } }[];
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ id: r.receiptId, store: { nameEn: 'Lulu Hypermarket' } });
+    const detail = (await (await call(`/api/receipts/${r.receiptId}?deviceId=phone-8`)).json()) as { summary: Record<string, number>; lines: { rawText: string; status: string; product: { nameEn: string } | null; observation: { status: string } | null }[] };
+    expect(detail.lines).toHaveLength(3);
+    expect(detail.lines[0]).toMatchObject({ status: 'matched', product: { nameEn: 'Ariel Automatic Laundry Powder 2.5kg' }, observation: { status: 'accepted' } });
+    expect(detail.lines[1]!.observation?.status).toBe('quarantined'); // 2.800 for 1L milk
+    expect(detail.lines[2]).toMatchObject({ status: 'unmatched', product: null });
+    expect(detail.summary).toEqual({ lines: 3, saved: 1, held: 1, waiting: 0, newItems: 1 });
+    expect((await call(`/api/receipts/${r.receiptId}?deviceId=someone-else`)).status).toBe(404);
+  });
+
+  it('GET /api/prices/recent lists real scanned prices only (no seed estimates)', async () => {
+    const feed = (await (await call('/api/prices/recent?limit=50')).json()) as { evidence: string; product: { nameEn: string }; store: { nameEn: string }; priceKwd: number; previousPriceKwd: number | null }[];
+    expect(feed.length).toBeGreaterThan(0);
+    expect(feed.every((f) => f.evidence === 'receipt' || f.evidence === 'shelf_tag')).toBe(true);
+    expect(feed.some((f) => f.product.nameEn === 'Ariel Automatic Laundry Powder 2.5kg' && f.store.nameEn === 'Lulu Hypermarket' && f.priceKwd === 3.05)).toBe(true);
+    // the quarantined OCR error is not in the feed
+    expect(feed.some((f) => f.priceKwd === 2.8)).toBe(false);
+  });
+});
