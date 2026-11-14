@@ -11,10 +11,15 @@
 ```bash
 npm install            # .npmrc skips native compiles; better-sqlite3 ships prebuilt binaries
 npm run db:reset       # drop → migrate → seed  (SQLite file: data/logta.db, override with LOGTA_DB_PATH)
-npm test               # vitest, 34 tests
-npm run demo:ingest    # ingest the 4 fixture receipts and print a report  (demo:fresh = reset + ingest)
+npm test               # vitest, 66 tests
+npm run demo:ingest    # 4 fixture receipts through the automatic pipeline  (demo:fresh = reset + ingest)
+npm run server         # HTTP API for the UI (see docs/API.md)
 npm run typecheck:server
 ```
+
+**Fully automatic:** `src/lib/pipeline.ts` runs photo → AI extraction → alias matching → AI only for leftover
+lines → prices/alerts → automatic catalogue growth, with **no human confirmation**. `server/` exposes it over HTTP;
+see [docs/API.md](API.md).
 
 Stack: TypeScript (strict) · SQLite via `better-sqlite3` · Drizzle ORM (migrations in `drizzle/`). No servers, no
 Docker, so it runs on Replit. Code lives in `src/db/` (schema, seed) and `src/lib/` (services). These are **Node-only**:
@@ -77,7 +82,9 @@ Key indexes: `price_observations(product_id, store_id, observed_at)`, `product_a
 | `getCurrentPrice` / `getPriceMatrix` | trust-weighted median of the latest 10 accepted observations. A fresh promo (≤3 days) is the current price; stale promos are ignored. `trust` = 0.7·max + 0.3·mass, so seed-only estimates top out around 0.58 and fresh receipts approach 1 |
 | `optimizeBasket(listId, loc, opts)` | all 1–3-store combinations; each item goes to the cheapest store in the combo; same-group substitution by unit price only when the item is missing; travel = best-order round trip × 1.3 road factor × 0.008 KWD/km (+ optional time cost); online = delivery fee, min order enforced; returns the top 3 |
 | `checkAlerts(obs)` | accepted observation ≤ target → alert with 30-day min/avg/max; "buy now" if within 3% of the 30-day minimum, otherwise "a lower price was seen recently" |
-| `ingestUnmatched` / `promotePending` | upsert unknown text; ready when `seen_count ≥ 3` and `distinct_users ≥ 2`; promotion creates the product and its aliases |
+| `ingestUnmatched` / `promotePending` | upsert unknown text (with the AI's proposed name, brand, category, size); ready when `seen_count ≥ 3` and `distinct_users ≥ 2` |
+| `autoPromoteReady()` | **no human:** ready items with a complete AI proposal become products, or are merged into an existing product when the proposal matches one (≥ 0.9). Earlier receipt prices are then backfilled. Lines the AI calls "not a product" (bag fees, deposits) are never promoted |
+| `processReceiptImage` / `processExtraction` / `retryNeedsReview` | the automatic pipeline (`pipeline.ts`); takes any `LlmClient`, and `createLlmClientFromEnv()` builds the real one (OpenRouter > OpenAI > Gemini) |
 | `ingestReceipt` / `resolveLineWithLlm` | the end-to-end pipeline used by the API |
 | `llm-contract.ts` | types, JSON schemas and the exact system prompts for LLM call 1 (extraction) and call 2 (choose a candidate or null). This layer never calls an LLM |
 
@@ -126,14 +133,18 @@ alone never look more than "medium" trusted; a fresh receipt pushes a price towa
 **3. Bad data protects itself.** An OCR slip (0.280 read as 2.800) is quarantined instead of corrupting prices. A real
 price jump is accepted once a second, independent shopper confirms it.
 
-**4. The catalogue grows itself.** Unknown items collect sightings; after 3 sightings by 2+ users they're promoted to
-real products with their receipt text as the first alias.
+**4. The catalogue grows itself, with no human review.** Unknown items collect sightings, and the AI proposes what each
+one is. After 3 sightings by 2+ shoppers it becomes a real product automatically. If the AI's proposal turns out to
+be an existing product, the text is merged into it instead of creating a duplicate. Earlier receipt prices for that
+item are then backfilled.
 
 **5. Everyone benefits from everyone.** One shopper's receipt updates the price matrix for the basket optimiser and
 fires another shopper's price alert.
 
 ## Known gaps / next steps
-- No auth: `users` are demo personas; API routes should pass `userId`.
+- No accounts: the server identifies devices by an anonymous `deviceId` (`users.device_id`).
+- Hosting: the API needs a host that keeps the SQLite file (Replit/Railway/Render disk/VM), not Vercel serverless.
+- Rate limits are in memory per server process; add a provider/firewall limit if the API is scaled out.
 - `resolveStore` matches header keywords for the 12 seeded stores only; unknown stores leave `store_id` null
   (lines are matched, but no prices are recorded) until the user picks the store (`ingestReceipt(…, { storeId })`).
 - Matching loads all aliases per line (fine for ~1k aliases). Cache or index trigrams if the catalogue grows to many thousands.

@@ -39,7 +39,9 @@ export const DEFAULT_ORIGINS = ['http://localhost:5173', 'http://localhost:5179'
 const MAX_SCAN_BODY = 8 * 1024 * 1024;
 const MAX_JSON_BODY = 512 * 1024;
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
+/** Per device (tight) and per IP (loose: a whole venue/office often shares one public IP). */
 export const SCAN_RATE = { perMinute: 6, perHour: 60 };
+export const SCAN_RATE_PER_IP = { perMinute: 60, perHour: 600 };
 
 export interface AppOptions {
   db?: DB;
@@ -124,12 +126,12 @@ export function createApp(opts: AppOptions): Server {
   const db = () => opts.db ?? getDb();
   const hits = new Map<string, number[]>();
 
-  const rateLimit = (key: string) => {
+  const rateLimit = (key: string, limit: { perMinute: number; perHour: number } = SCAN_RATE) => {
     const t = now().getTime();
     const recent = (hits.get(key) ?? []).filter((x) => t - x < 3_600_000);
     const minute = recent.filter((x) => t - x < 60_000);
-    if (minute.length >= SCAN_RATE.perMinute) throw new HttpError(429, 'Too many scans, please wait a moment', { 'Retry-After': String(Math.ceil((60_000 - (t - minute[0]!)) / 1000)) });
-    if (recent.length >= SCAN_RATE.perHour) throw new HttpError(429, 'Hourly scan limit reached', { 'Retry-After': String(Math.ceil((3_600_000 - (t - recent[0]!)) / 1000)) });
+    if (minute.length >= limit.perMinute) throw new HttpError(429, 'Too many scans, please wait a moment', { 'Retry-After': String(Math.ceil((60_000 - (t - minute[0]!)) / 1000)) });
+    if (recent.length >= limit.perHour) throw new HttpError(429, 'Hourly scan limit reached', { 'Retry-After': String(Math.ceil((3_600_000 - (t - recent[0]!)) / 1000)) });
     recent.push(t);
     hits.set(key, recent);
     if (hits.size > 10_000) hits.clear();
@@ -169,7 +171,9 @@ export function createApp(opts: AppOptions): Server {
         const body = await readJson(req, path === '/api/scan' ? MAX_SCAN_BODY : MAX_JSON_BODY);
         const userId = user(body);
         rateLimit(`u${userId}`);
-        rateLimit(`ip${req.socket.remoteAddress}`);
+        // behind a hosting proxy the socket address is the proxy, so prefer the forwarded client IP
+        const ip = String(req.headers['x-forwarded-for'] ?? '').split(',')[0]?.trim() || req.socket.remoteAddress;
+        rateLimit(`ip${ip}`, SCAN_RATE_PER_IP);
         const storeId = optInt(body.storeId, 'storeId');
         try {
           const report =
