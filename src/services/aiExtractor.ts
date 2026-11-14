@@ -14,14 +14,6 @@ export type ExtractionInput =
   | { kind: 'image'; dataUrl: string }
   | { kind: 'sample'; receipt: MockReceipt }
 
-const env = import.meta.env as Record<string, string | undefined>
-const OPENROUTER_KEY = env.VITE_OPENROUTER_API_KEY?.trim()
-const OPENAI_KEY = env.VITE_OPENAI_API_KEY?.trim()
-const GEMINI_KEY = env.VITE_GEMINI_API_KEY?.trim()
-
-export const configuredProvider = (): ExtractionProvider =>
-  OPENROUTER_KEY ? 'openrouter' : OPENAI_KEY ? 'openai' : GEMINI_KEY ? 'gemini' : 'simulated'
-
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 let uidCounter = 0
@@ -66,88 +58,27 @@ ${products.map((p) => `- ${p.id} | ${p.nameEn} | ${p.nameAr}`).join('\n')}`
 // Provider calls
 // ---------------------------------------------------------------------------
 
-const chatCompletion = async (
-  url: string,
-  headers: Record<string, string>,
-  model: string,
+class NoProviderError extends Error {}
+
+// The API keys live on the server (api/extract.ts); the browser only ever talks to this endpoint.
+const callProxy = async (
   prompt: string,
   imageUrl: string,
-): Promise<string> => {
-  const res = await fetch(url, {
+): Promise<{ provider: ExtractionProvider; text: string }> => {
+  const res = await fetch('/api/extract', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      response_format: { type: 'json_object' },
-      messages: [
-        // Catalogue + schema live in the system prompt so the model returns matched_product_id directly.
-        { role: 'system', content: prompt },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Extract the items from this Kuwait receipt / shelf tag image. Return JSON only.' },
-            { type: 'image_url', image_url: { url: imageUrl } },
-          ],
-        },
-      ],
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, imageUrl }),
   })
-  if (!res.ok) throw new Error(`${model} request failed (${res.status})`)
-  const json = (await res.json()) as { choices?: { message?: { content?: string } }[] }
-  const content = json.choices?.[0]?.message?.content
-  if (!content) throw new Error(`${model} returned an empty response`)
-  return content
-}
-
-const callOpenRouter = async (prompt: string, imageUrl: string): Promise<string> => {
-  const headers = {
-    Authorization: `Bearer ${OPENROUTER_KEY}`,
-    'HTTP-Referer': window.location.origin,
-    'X-Title': 'Logta',
+  // 503 = no key configured on the server, 404 = no API available (e.g. plain static hosting)
+  if (res.status === 503 || res.status === 404) throw new NoProviderError('No API key configured')
+  const data = (await res.json().catch(() => null)) as
+    | { provider?: ExtractionProvider; text?: string; error?: string }
+    | null
+  if (!res.ok || !data?.text || !data.provider) {
+    throw new Error(data?.error ?? `extraction request failed (${res.status})`)
   }
-  const url = 'https://openrouter.ai/api/v1/chat/completions'
-  try {
-    return await chatCompletion(url, headers, 'openai/gpt-4o-mini', prompt, imageUrl)
-  } catch {
-    return await chatCompletion(url, headers, 'google/gemini-2.5-flash', prompt, imageUrl)
-  }
-}
-
-const callOpenAI = (prompt: string, imageUrl: string): Promise<string> =>
-  chatCompletion(
-    'https://api.openai.com/v1/chat/completions',
-    { Authorization: `Bearer ${OPENAI_KEY}` },
-    'gpt-4o-mini',
-    prompt,
-    imageUrl,
-  )
-
-const callGemini = async (prompt: string, imageUrl: string): Promise<string> => {
-  const match = /^data:(.+?);base64,(.*)$/.exec(imageUrl)
-  if (!match) throw new Error('Unsupported image encoding')
-  const res = await fetch(
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY ?? '' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }, { inline_data: { mime_type: match[1], data: match[2] } }],
-          },
-        ],
-        generationConfig: { temperature: 0, responseMimeType: 'application/json' },
-      }),
-    },
-  )
-  if (!res.ok) throw new Error(`gemini-2.5-flash request failed (${res.status})`)
-  const json = (await res.json()) as {
-    candidates?: { content?: { parts?: { text?: string }[] } }[]
-  }
-  const text = json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('')
-  if (!text) throw new Error('gemini-2.5-flash returned an empty response')
-  return text
+  return { provider: data.provider, text: data.text }
 }
 
 // ---------------------------------------------------------------------------
@@ -292,25 +223,17 @@ export const extractReceipt = async (
     return simulate(input, products, stores)
   }
 
-  const attempts: { provider: ExtractionProvider; run: (p: string, img: string) => Promise<string> }[] = []
-  if (OPENROUTER_KEY) attempts.push({ provider: 'openrouter', run: callOpenRouter })
-  if (OPENAI_KEY) attempts.push({ provider: 'openai', run: callOpenAI })
-  if (GEMINI_KEY) attempts.push({ provider: 'gemini', run: callGemini })
-
-  if (attempts.length === 0) {
-    await wait(1500)
-    return simulate(input, products, stores, 'No API key configured - showing simulated extraction.')
-  }
-
   const prompt = buildPrompt(products, stores)
   let lastError = ''
-  for (const attempt of attempts) {
-    try {
-      const text = await attempt.run(prompt, input.dataUrl)
-      return parseModelResult(text, attempt.provider, products, stores)
-    } catch (e) {
-      lastError = e instanceof Error ? e.message : String(e)
+  try {
+    const { provider, text } = await callProxy(prompt, input.dataUrl)
+    return parseModelResult(text, provider, products, stores)
+  } catch (e) {
+    if (e instanceof NoProviderError) {
+      await wait(1500)
+      return simulate(input, products, stores, 'No API key configured - showing simulated extraction.')
     }
+    lastError = e instanceof Error ? e.message : String(e)
   }
   await wait(500)
   return simulate(input, products, stores, `AI extraction failed (${lastError}) - showing simulated extraction.`)
