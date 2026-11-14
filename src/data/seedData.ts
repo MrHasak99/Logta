@@ -174,11 +174,13 @@ export const SEED_PRODUCTS: Product[] = SEEDS.map(({ prices: _prices, ...product
 
 const DAY = 24 * 60 * 60 * 1000
 
-/** Some seed entries are tagged as scans so the "Recent Verified Scans" feed is never empty. */
+/**
+ * Some seed entries are shown in the live feed so it is never empty. They are labelled
+ * 'Demo Estimate' — seed prices are invented demo data and must never be presented as real scans.
+ */
 const sourceFor = (i: number, s: number): { source: PriceSource; confidence: number } => {
   const n = (i * 7 + s * 3) % 10
-  if (n === 0) return { source: 'Receipt Scan', confidence: 93 }
-  if (n === 5) return { source: 'Shelf Tag', confidence: 82 }
+  if (n === 0 || n === 5) return { source: 'Demo Estimate', confidence: 60 }
   return { source: 'Initial Index', confidence: 70 + ((i + s) % 4) * 5 }
 }
 
@@ -193,6 +195,10 @@ const HISTORY_AGES_DAYS = [14, 28, 45] as const
 
 /** Deterministic "out of stock" pattern (~1 in 14 pairs) so alerts/optimizer have realistic gaps. */
 const isInStock = (i: number, s: number): boolean => (i * 5 + s * 3) % 14 !== 0
+
+/** True for any price that came from the seed (including data saved by older app versions). */
+export const isDemoEntry = (e: Pick<PriceEntry, 'id' | 'source'>): boolean =>
+  e.source === 'Demo Estimate' || e.source === 'Initial Index' || e.id.startsWith('seed-')
 
 export const createSeedData = (): AppData => {
   const now = Date.now()

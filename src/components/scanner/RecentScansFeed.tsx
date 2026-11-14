@@ -1,7 +1,8 @@
-import { Receipt, Tag } from 'lucide-react'
+import { FlaskConical, Receipt, Tag } from 'lucide-react'
 import { useMemo } from 'react'
 import { useApp } from '../../context/AppContext'
-import type { PriceSource } from '../../data/types'
+import { isDemoEntry } from '../../data/seedData'
+import type { PriceEntry } from '../../data/types'
 import { latestEntry } from '../../services/priceCommit'
 import { formatKwd, timeAgo } from '../../utils/formatters'
 
@@ -32,7 +33,9 @@ export default function RecentScansFeed() {
     return out
   }, [priceEntries])
 
-  const sourceLabel = (s: PriceSource) => (s === 'Receipt Scan' ? t('srcReceipt') : s === 'Shelf Tag' ? t('srcShelf') : t('srcInitial'))
+  const sourceLabel = (e: PriceEntry) =>
+    isDemoEntry(e) ? t('srcDemo') : e.source === 'Receipt Scan' ? t('srcReceipt') : e.source === 'Shelf Tag' ? t('srcShelf') : t('srcInitial')
+  const hasDemoRows = rows.some(({ entry }) => isDemoEntry(entry))
 
   return (
     <section className="space-y-2">
@@ -40,6 +43,7 @@ export default function RecentScansFeed() {
         <div>
           <h2 className="text-sm font-extrabold text-navy">{t('feedTitle')}</h2>
           <p className="text-[11px] text-slate-500">{t('feedSubtitle')}</p>
+          {hasDemoRows && <p className="mt-0.5 text-[11px] font-semibold text-amber-700">{t('feedDemoNote')}</p>}
         </div>
         {scanRecords.length > 0 && (
           <span className="rounded-full bg-brand-light px-2.5 py-1 text-[11px] font-bold text-brand-dark">
@@ -55,6 +59,7 @@ export default function RecentScansFeed() {
       ) : (
         <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white">
           {rows.map(({ entry, previous }) => {
+            const demo = isDemoEntry(entry)
             const product = products.find((p) => p.id === entry.productId)
             const store = stores.find((s) => s.id === entry.storeId)
             const delta = previous ? entry.priceKwd - previous.priceKwd : null
@@ -62,17 +67,17 @@ export default function RecentScansFeed() {
               <li key={entry.id} className="flex items-center gap-3 px-3 py-2.5">
                 <span
                   className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                    entry.source === 'Receipt Scan' ? 'bg-navy text-brand' : 'bg-brand-light text-brand-dark'
+                    demo ? 'bg-amber-50 text-amber-700' : entry.source === 'Receipt Scan' ? 'bg-navy text-brand' : 'bg-brand-light text-brand-dark'
                   }`}
                 >
-                  {entry.source === 'Receipt Scan' ? <Receipt size={15} /> : <Tag size={15} />}
+                  {demo ? <FlaskConical size={15} /> : entry.source === 'Receipt Scan' ? <Receipt size={15} /> : <Tag size={15} />}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p dir="auto" className="truncate text-[13px] font-bold text-navy">
                     {productName(product)}
                   </p>
                   <p className="truncate text-[11px] text-slate-500">
-                    {storeName(store)} · {sourceLabel(entry.source)} · {entry.confidence}% · {timeAgo(entry.timestamp, lang)}
+                    {storeName(store)} · {sourceLabel(entry)}{demo ? '' : ` · ${entry.confidence}%`} · {timeAgo(entry.timestamp, lang)}
                   </p>
                 </div>
                 <div className="shrink-0 text-end" dir="ltr">
