@@ -1,4 +1,4 @@
-import type { AppData, Category, PriceEntry, PriceSource, Product, Store } from './types'
+import type { AppData, Category, PriceEntry, PriceSource, Product, Store } from './types.js'
 
 export const DATA_VERSION = 1
 
