@@ -37,13 +37,14 @@ Read the attached image and return ONE JSON object, no markdown, with this exact
   "store_name": string,            // MUST be exactly one of the store ids below, or "unknown"
   "receipt_date": string,          // YYYY-MM-DD, or "" if not visible
   "document_type": "receipt" | "shelf_tag",
+  "currency": string,              // currency printed on the document, ISO code: "KWD", "AED", "SAR", ... ("KWD" if it says KD / دينار)
   "items": [
     {
       "raw_text": string,                 // line text exactly as printed
       "matched_product_id": string|null,  // product id from the catalogue below, or null if no confident match
       "canonical_name_en": string,        // catalogue English name, or "" if null
       "canonical_name_ar": string,        // catalogue Arabic name, or "" if null
-      "price_kwd": number,                // price in Kuwaiti Dinar, 3 decimals (e.g. 0.550). Never fils-as-integers.
+      "price_kwd": number,                // the unit price EXACTLY as printed on the document (e.g. 14.90 stays 14.90, 0.550 stays 0.550)
       "confidence_score": number          // 0-100
     }
   ]
@@ -52,6 +53,8 @@ Rules:
 - Only include purchasable product lines. Skip totals, VAT, change, cash, card, and discount summary lines.
 - Use the unit price (price for one pack) when a quantity is shown.
 - Lower confidence_score for blurry, partial or ambiguous lines.
+- NEVER rescale, divide, multiply or convert prices. Copy the number as printed. Kuwait receipts usually print 3 decimals (0.550) but other receipts print 2 (14.90): do not pad, shift the decimal point, or convert currencies.
+- Do not include the quantity or the price inside raw_text unless it is part of the product name.
 
 STORES (use the id):
 ${stores.map((s) => `- ${s.id}: ${s.nameEn} / ${s.nameAr} (${s.area})`).join('\n')}
@@ -219,6 +222,8 @@ const parseModelResult = (
     .map((i) => toExtractedItem(i as Record<string, unknown>, products))
     .filter((i): i is ExtractedItem => i !== null)
   const documentType: DocumentType = data.document_type === 'shelf_tag' ? 'shelf_tag' : 'receipt'
+  const currency = String(data.currency ?? 'KWD').trim().toUpperCase()
+  const foreign = currency && !['KWD', 'KD', 'KUWAITI DINAR'].includes(currency)
   return {
     storeId,
     storeNameRaw: storeRaw,
@@ -226,6 +231,9 @@ const parseModelResult = (
     documentType,
     items,
     provider,
+    notice: foreign
+      ? `This document is priced in ${currency}, not KWD. Prices are shown as printed and NOT converted - check them before confirming.`
+      : undefined,
   }
 }
 
