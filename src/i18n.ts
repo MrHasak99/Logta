@@ -111,6 +111,8 @@ const en = {
   srcReceipt: 'Receipt Scan',
   srcShelf: 'Shelf Tag',
   srcInitial: 'Initial Index',
+  srcDemo: 'Demo estimate',
+  feedDemoNote: 'Prices marked "Demo estimate" are sample data for this demo, not real scans. Scan a receipt to add real prices.',
 }
 
 export type TKey = keyof typeof en
@@ -225,6 +227,8 @@ const ar: Record<TKey, string> = {
   srcReceipt: 'مسح فاتورة',
   srcShelf: 'بطاقة رف',
   srcInitial: 'الفهرس الأولي',
+  srcDemo: 'تقدير تجريبي',
+  feedDemoNote: 'الأسعار المعلّمة «تقدير تجريبي» بيانات نموذجية لأغراض العرض وليست مسوحات حقيقية. امسح فاتورة لإضافة أسعار حقيقية.',
 }
 
 export const dictionaries: Record<Lang, Record<TKey, string>> = { en, ar }

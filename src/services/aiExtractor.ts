@@ -14,140 +14,35 @@ export type ExtractionInput =
   | { kind: 'image'; dataUrl: string }
   | { kind: 'sample'; receipt: MockReceipt }
 
-const env = import.meta.env as Record<string, string | undefined>
-const OPENROUTER_KEY = env.VITE_OPENROUTER_API_KEY?.trim()
-const OPENAI_KEY = env.VITE_OPENAI_API_KEY?.trim()
-const GEMINI_KEY = env.VITE_GEMINI_API_KEY?.trim()
-
-export const configuredProvider = (): ExtractionProvider =>
-  OPENROUTER_KEY ? 'openrouter' : OPENAI_KEY ? 'openai' : GEMINI_KEY ? 'gemini' : 'simulated'
-
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 let uidCounter = 0
 const uid = () => `item-${Date.now().toString(36)}-${uidCounter++}`
 
 // ---------------------------------------------------------------------------
-// Prompt
-// ---------------------------------------------------------------------------
-
-const buildPrompt = (products: Product[], stores: Store[]): string => `You are an OCR + data extraction engine for Kuwait grocery receipts and shelf price tags (English and Arabic).
-Read the attached image and return ONE JSON object, no markdown, with this exact shape:
-{
-  "store_name": string,            // MUST be exactly one of the store ids below, or "unknown"
-  "receipt_date": string,          // YYYY-MM-DD, or "" if not visible
-  "document_type": "receipt" | "shelf_tag",
-  "currency": string,              // currency printed on the document, ISO code: "KWD", "AED", "SAR", ... ("KWD" if it says KD / دينار)
-  "items": [
-    {
-      "raw_text": string,                 // line text exactly as printed
-      "matched_product_id": string|null,  // product id from the catalogue below, or null if no confident match
-      "canonical_name_en": string,        // catalogue English name, or "" if null
-      "canonical_name_ar": string,        // catalogue Arabic name, or "" if null
-      "price_kwd": number,                // the unit price EXACTLY as printed on the document (e.g. 14.90 stays 14.90, 0.550 stays 0.550)
-      "confidence_score": number          // 0-100
-    }
-  ]
-}
-Rules:
-- Only include purchasable product lines. Skip totals, VAT, change, cash, card, and discount summary lines.
-- Use the unit price (price for one pack) when a quantity is shown.
-- Lower confidence_score for blurry, partial or ambiguous lines.
-- NEVER rescale, divide, multiply or convert prices. Copy the number as printed. Kuwait receipts usually print 3 decimals (0.550) but other receipts print 2 (14.90): do not pad, shift the decimal point, or convert currencies.
-- Do not include the quantity or the price inside raw_text unless it is part of the product name.
-
-STORES (use the id):
-${stores.map((s) => `- ${s.id}: ${s.nameEn} / ${s.nameAr} (${s.area})`).join('\n')}
-
-PRODUCT CATALOGUE (id | English | Arabic):
-${products.map((p) => `- ${p.id} | ${p.nameEn} | ${p.nameAr}`).join('\n')}`
-
-// ---------------------------------------------------------------------------
 // Provider calls
 // ---------------------------------------------------------------------------
 
-const chatCompletion = async (
-  url: string,
-  headers: Record<string, string>,
-  model: string,
-  prompt: string,
-  imageUrl: string,
-): Promise<string> => {
-  const res = await fetch(url, {
+class NoProviderError extends Error {}
+
+// The API keys live on the server (api/extract.ts); the browser only ever talks to this endpoint.
+// Only the image is sent; the server builds the prompt from the fixed catalogue.
+const callProxy = async (imageUrl: string): Promise<{ provider: ExtractionProvider; text: string }> => {
+  const res = await fetch('/api/extract', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      response_format: { type: 'json_object' },
-      messages: [
-        // Catalogue + schema live in the system prompt so the model returns matched_product_id directly.
-        { role: 'system', content: prompt },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Extract the items from this Kuwait receipt / shelf tag image. Return JSON only.' },
-            { type: 'image_url', image_url: { url: imageUrl } },
-          ],
-        },
-      ],
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageUrl }),
   })
-  if (!res.ok) throw new Error(`${model} request failed (${res.status})`)
-  const json = (await res.json()) as { choices?: { message?: { content?: string } }[] }
-  const content = json.choices?.[0]?.message?.content
-  if (!content) throw new Error(`${model} returned an empty response`)
-  return content
-}
-
-const callOpenRouter = async (prompt: string, imageUrl: string): Promise<string> => {
-  const headers = {
-    Authorization: `Bearer ${OPENROUTER_KEY}`,
-    'HTTP-Referer': window.location.origin,
-    'X-Title': 'Logta',
+  // 503 = no key configured on the server, 404 = no API available (e.g. plain static hosting)
+  if (res.status === 503 || res.status === 404) throw new NoProviderError('No API key configured')
+  const data = (await res.json().catch(() => null)) as
+    | { provider?: ExtractionProvider; text?: string; error?: string }
+    | null
+  if (res.status === 429) throw new Error(data?.error ?? 'Too many scans, please wait a moment')
+  if (!res.ok || !data?.text || !data.provider) {
+    throw new Error(data?.error ?? `extraction request failed (${res.status})`)
   }
-  const url = 'https://openrouter.ai/api/v1/chat/completions'
-  try {
-    return await chatCompletion(url, headers, 'openai/gpt-4o-mini', prompt, imageUrl)
-  } catch {
-    return await chatCompletion(url, headers, 'google/gemini-2.5-flash', prompt, imageUrl)
-  }
-}
-
-const callOpenAI = (prompt: string, imageUrl: string): Promise<string> =>
-  chatCompletion(
-    'https://api.openai.com/v1/chat/completions',
-    { Authorization: `Bearer ${OPENAI_KEY}` },
-    'gpt-4o-mini',
-    prompt,
-    imageUrl,
-  )
-
-const callGemini = async (prompt: string, imageUrl: string): Promise<string> => {
-  const match = /^data:(.+?);base64,(.*)$/.exec(imageUrl)
-  if (!match) throw new Error('Unsupported image encoding')
-  const res = await fetch(
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY ?? '' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }, { inline_data: { mime_type: match[1], data: match[2] } }],
-          },
-        ],
-        generationConfig: { temperature: 0, responseMimeType: 'application/json' },
-      }),
-    },
-  )
-  if (!res.ok) throw new Error(`gemini-2.5-flash request failed (${res.status})`)
-  const json = (await res.json()) as {
-    candidates?: { content?: { parts?: { text?: string }[] } }[]
-  }
-  const text = json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('')
-  if (!text) throw new Error('gemini-2.5-flash returned an empty response')
-  return text
+  return { provider: data.provider, text: data.text }
 }
 
 // ---------------------------------------------------------------------------
@@ -292,25 +187,16 @@ export const extractReceipt = async (
     return simulate(input, products, stores)
   }
 
-  const attempts: { provider: ExtractionProvider; run: (p: string, img: string) => Promise<string> }[] = []
-  if (OPENROUTER_KEY) attempts.push({ provider: 'openrouter', run: callOpenRouter })
-  if (OPENAI_KEY) attempts.push({ provider: 'openai', run: callOpenAI })
-  if (GEMINI_KEY) attempts.push({ provider: 'gemini', run: callGemini })
-
-  if (attempts.length === 0) {
-    await wait(1500)
-    return simulate(input, products, stores, 'No API key configured - showing simulated extraction.')
-  }
-
-  const prompt = buildPrompt(products, stores)
   let lastError = ''
-  for (const attempt of attempts) {
-    try {
-      const text = await attempt.run(prompt, input.dataUrl)
-      return parseModelResult(text, attempt.provider, products, stores)
-    } catch (e) {
-      lastError = e instanceof Error ? e.message : String(e)
+  try {
+    const { provider, text } = await callProxy(input.dataUrl)
+    return parseModelResult(text, provider, products, stores)
+  } catch (e) {
+    if (e instanceof NoProviderError) {
+      await wait(1500)
+      return simulate(input, products, stores, 'No API key configured - showing simulated extraction.')
     }
+    lastError = e instanceof Error ? e.message : String(e)
   }
   await wait(500)
   return simulate(input, products, stores, `AI extraction failed (${lastError}) - showing simulated extraction.`)
