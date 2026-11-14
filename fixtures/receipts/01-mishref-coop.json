@@ -1,0 +1,14 @@
+{
+  "store_text": "جمعية مشرف التعاونية - MISHREF CO-OP SOCIETY",
+  "purchased_at": "2026-11-13T18:42:00+03:00",
+  "lines": [
+    { "raw_text": "حليب KDD كامل ١ لتر", "qty": 2, "unit_price_kwd": 0.385, "line_total_kwd": 0.770 },
+    { "raw_text": "حليب المراعي كامل ١ لتر", "qty": 1, "unit_price_kwd": 0.405, "line_total_kwd": 0.405 },
+    { "raw_text": "TILDA BSMTI 5KG", "qty": 1, "unit_price_kwd": 4.750, "line_total_kwd": 4.750 },
+    { "raw_text": "خبز مطاحن", "qty": 3, "unit_price_kwd": 0.150, "line_total_kwd": 0.450 },
+    { "raw_text": "AFIA CORN OIL 1.8L", "qty": 1, "unit_price_kwd": 1.595, "line_total_kwd": 1.595 },
+    { "raw_text": "TOMATO KG", "qty": 1.25, "unit_price_kwd": 0.345, "line_total_kwd": 0.431 },
+    { "raw_text": "ZAATAR MANAKEESH 4PC", "qty": 1, "unit_price_kwd": 0.600, "line_total_kwd": 0.600 }
+  ],
+  "total_kwd": 9.001
+}

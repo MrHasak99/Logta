@@ -1,0 +1,14 @@
+{
+  "store_text": "Carrefour - The Avenues",
+  "purchased_at": "2026-11-14T12:30:00+03:00",
+  "lines": [
+    { "raw_text": "H/S SHMP CLSC CLN 400", "qty": 1, "unit_price_kwd": 1.900, "line_total_kwd": 1.900 },
+    { "raw_text": "ALMARAI LABN FULLFAT 1LTR", "qty": 1, "unit_price_kwd": 0.385, "line_total_kwd": 0.385 },
+    { "raw_text": "FAIRY LEM DW 750", "qty": 1, "unit_price_kwd": 0.925, "line_total_kwd": 0.925 },
+    { "raw_text": "CLOROX 3.78L", "qty": 1, "unit_price_kwd": 1.150, "line_total_kwd": 1.150 },
+    { "raw_text": "تونة العلالي ١٨٥ غم", "qty": 3, "unit_price_kwd": 0.540, "line_total_kwd": 1.620 },
+    { "raw_text": "طماط", "qty": 1.5, "unit_price_kwd": 0.330, "line_total_kwd": 0.495 },
+    { "raw_text": "ZAATAR MANAKEESH 4PC", "qty": 1, "unit_price_kwd": 0.600, "line_total_kwd": 0.600 }
+  ],
+  "total_kwd": 7.075
+}

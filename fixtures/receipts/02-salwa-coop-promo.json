@@ -1,0 +1,13 @@
+{
+  "store_text": "SALWA CO-OPERATIVE SOCIETY جمعية سلوى",
+  "purchased_at": "2026-11-13T20:05:00+03:00",
+  "lines": [
+    { "raw_text": "TILDA PURE BASMATI 5KG", "qty": 1, "unit_price_kwd": 4.450, "line_total_kwd": 4.450 },
+    { "raw_text": "دجاج ساديا ١٠٠٠غ", "qty": 2, "unit_price_kwd": 0.920, "line_total_kwd": 1.840 },
+    { "raw_text": "ALMARAI LABN FULLFAT 1LTR", "qty": 2, "unit_price_kwd": 0.370, "line_total_kwd": 0.740 },
+    { "raw_text": "PEPSI 330ML*6", "qty": 1, "unit_price_kwd": 1.150, "line_total_kwd": 1.150 },
+    { "raw_text": "FAIRY LEMON 750ML", "qty": 1, "unit_price_kwd": 0.900, "line_total_kwd": 0.900 },
+    { "raw_text": "شاي ليبتون ١٠٠ كيس", "qty": 1, "unit_price_kwd": 1.150, "line_total_kwd": 1.150 }
+  ],
+  "total_kwd": 10.230
+}

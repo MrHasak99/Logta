@@ -15,7 +15,8 @@
     "db:import-snapshot": "tsx src/db/import-web-snapshot.ts",
     "demo:ingest": "tsx scripts/demo-ingest.ts",
     "test": "vitest run",
-    "typecheck:server": "tsc -p tsconfig.server.json"
+    "typecheck:server": "tsc -p tsconfig.server.json",
+    "demo:fresh": "npm run db:reset && npm run demo:ingest"
   },
   "dependencies": {
     "better-sqlite3": "^13.2.0",

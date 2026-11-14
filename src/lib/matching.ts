@@ -170,7 +170,7 @@ export function matchLine(rawText: string, storeIdOrOpts?: number | null | Match
     top.agrees !== false &&
     (!runnerUp || top.score - runnerUp.score >= FUZZY_MARGIN)
   ) {
-    const confidence = round3(top.score);
+    const confidence = Math.min(0.99, round3(top.score)); // only exact alias hits are 1.0
     let aliasLearned = false;
     if (learn && confidence >= LEARN_THRESHOLD) {
       aliasLearned = learnAlias(top.row.productId, rawText, { storeId, source: 'ai_match', now, db }).created;

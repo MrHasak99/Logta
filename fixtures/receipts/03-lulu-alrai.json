@@ -1,0 +1,13 @@
+{
+  "store_text": "LULU HYPERMARKET AL-RAI",
+  "purchased_at": "2026-11-14T10:15:00+03:00",
+  "lines": [
+    { "raw_text": "ALMARAI FRSH MLK FF 1L LULU", "qty": 2, "unit_price_kwd": 0.415, "line_total_kwd": 0.830 },
+    { "raw_text": "KDD FF MILK 1L", "qty": 1, "unit_price_kwd": 2.800, "line_total_kwd": 2.800 },
+    { "raw_text": "ARIEL AUTO 2.5KG", "qty": 1, "unit_price_kwd": 3.050, "line_total_kwd": 3.050 },
+    { "raw_text": "NIDO MILK PWD 1800G", "qty": 1, "unit_price_kwd": 5.750, "line_total_kwd": 5.750 },
+    { "raw_text": "H/S SHMP CLSC CLN 400", "qty": 1, "unit_price_kwd": 1.850, "line_total_kwd": 1.850 },
+    { "raw_text": "ZAATAR MANAKEESH 4PC", "qty": 2, "unit_price_kwd": 0.650, "line_total_kwd": 1.300 }
+  ],
+  "total_kwd": 15.580
+}
