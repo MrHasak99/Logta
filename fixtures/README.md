@@ -34,7 +34,7 @@ npm run demo:fresh     # reset DB + ingest all 4 (same as db:reset then demo:ing
 | learned aliases added | 3 |
 | quarantined prices | 1 |
 | alerts fired | 1 |
-| pending products → promoted | 1 (zaatar manakeesh) |
+| products auto-created | 1 (zaatar manakeesh: created by the AI after 3 sightings by 2 users, 3 earlier prices backfilled, no human step) |
 
 ## Tips for the live demo
 - Show receipt 3 then receipt 4 back-to-back: *"the same shorthand cost us an AI call a minute ago; now it's free."*

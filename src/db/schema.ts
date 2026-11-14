@@ -91,6 +91,8 @@ export const products = sqliteTable(
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   displayName: text('display_name').notNull(),
+  /** Anonymous, stable per-device id sent by the app (no auth). Lets us count distinct contributors. */
+  deviceId: text('device_id').unique(),
   homeLat: real('home_lat'),
   homeLng: real('home_lng'),
   contributionCount: integer('contribution_count').notNull().default(0),
@@ -187,6 +189,10 @@ export const pendingProducts = sqliteTable(
     proposedNameEn: text('proposed_name_en'),
     proposedNameAr: text('proposed_name_ar'),
     proposedCategoryId: integer('proposed_category_id').references(() => categories.id),
+    /** AI-proposed details used for automatic promotion (see autoPromoteReady). */
+    proposedBrand: text('proposed_brand'),
+    proposedSizeValue: real('proposed_size_value'),
+    proposedSizeUnit: text('proposed_size_unit', { enum: SIZE_UNITS }),
     promotedProductId: integer('promoted_product_id').references(() => products.id),
   },
 );

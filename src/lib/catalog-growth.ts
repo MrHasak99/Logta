@@ -4,8 +4,10 @@
  */
 import { and, eq, gte, isNull } from 'drizzle-orm';
 import { getDb, type DB } from '../db/client.ts';
-import { pendingProducts, productAliases, products, type PendingProduct, type Product, type SizeUnit } from '../db/schema.ts';
+import { pendingProducts, productAliases, products, receiptLines, receipts, type PendingProduct, type Product, type SizeUnit } from '../db/schema.ts';
+import { learnAlias, matchLine } from './matching.ts';
 import { detectLang, normalizeAlias, toBaseQty } from './normalize.ts';
+import { recordObservation } from './prices.ts';
 
 export const PROMOTION_MIN_SEEN = 3;
 export const PROMOTION_MIN_USERS = 2;
@@ -19,12 +21,22 @@ export interface IngestUnmatchedResult {
 export const isReadyForPromotion = (p: Pick<PendingProduct, 'seenCount' | 'distinctUsers' | 'promotedProductId'>) =>
   p.promotedProductId == null && p.seenCount >= PROMOTION_MIN_SEEN && p.distinctUsers >= PROMOTION_MIN_USERS;
 
+/** AI-proposed details for an unknown item (all optional; filled in as sightings arrive). */
+export interface PendingProposal {
+  nameEn?: string | null;
+  nameAr?: string | null;
+  categoryId?: number | null;
+  brand?: string | null;
+  sizeValue?: number | null;
+  sizeUnit?: SizeUnit | null;
+}
+
 /** Record a sighting of an unknown item (upsert on normalised text). */
 export function ingestUnmatched(
   rawText: string,
   userId: number | null,
   storeId: number | null,
-  opts: { proposal?: { nameEn?: string; nameAr?: string; categoryId?: number }; now?: Date; db?: DB } = {},
+  opts: { proposal?: PendingProposal; now?: Date; db?: DB } = {},
 ): IngestUnmatchedResult {
   const db = opts.db ?? getDb();
   const now = opts.now ?? new Date();
@@ -40,6 +52,7 @@ export function ingestUnmatched(
         aliasNormalized: norm, exampleRawText: rawText, firstSeenAt: now, lastSeenAt: now, seenCount: 1,
         distinctUsers: userIds.length, distinctStores: storeIds.length, userIdsJson: JSON.stringify(userIds), storeIdsJson: JSON.stringify(storeIds),
         proposedNameEn: opts.proposal?.nameEn ?? null, proposedNameAr: opts.proposal?.nameAr ?? null, proposedCategoryId: opts.proposal?.categoryId ?? null,
+        proposedBrand: opts.proposal?.brand ?? null, proposedSizeValue: opts.proposal?.sizeValue ?? null, proposedSizeUnit: opts.proposal?.sizeUnit ?? null,
       })
       .returning()
       .get();
@@ -62,6 +75,11 @@ export function ingestUnmatched(
       proposedNameEn: existing.proposedNameEn ?? opts.proposal?.nameEn ?? null,
       proposedNameAr: existing.proposedNameAr ?? opts.proposal?.nameAr ?? null,
       proposedCategoryId: existing.proposedCategoryId ?? opts.proposal?.categoryId ?? null,
+      proposedBrand: existing.proposedBrand ?? opts.proposal?.brand ?? null,
+      // size value + unit travel together
+      ...(existing.proposedSizeValue == null && opts.proposal?.sizeValue != null && opts.proposal.sizeUnit
+        ? { proposedSizeValue: opts.proposal.sizeValue, proposedSizeUnit: opts.proposal.sizeUnit }
+        : {}),
     })
     .where(eq(pendingProducts.id, existing.id))
     .returning()
@@ -142,4 +160,86 @@ export function promotePending(id: number, details: PromoteDetails, opts: { forc
     tx.update(pendingProducts).set({ promotedProductId: product.id }).where(eq(pendingProducts.id, id)).run();
     return product;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Fully automatic growth (no human review)
+// ---------------------------------------------------------------------------
+
+export interface AutoPromotion {
+  pendingId: number;
+  rawText: string;
+  /** 'created' = new product added; 'merged' = the AI's proposal matched an existing product, so the text became its alias. */
+  action: 'created' | 'merged';
+  productId: number;
+  productNameEn: string;
+  /** Earlier unmatched receipt lines that were re-linked and turned into price observations. */
+  backfilledLines: number;
+  backfilledObservations: number;
+}
+
+/** Minimum similarity for "this proposal is actually an existing product" → merge instead of creating a duplicate. */
+export const MERGE_THRESHOLD = 0.9;
+
+const hasFullProposal = (p: PendingProduct) =>
+  !!p.proposedNameEn && !!p.proposedNameAr && p.proposedCategoryId != null && p.proposedSizeValue != null && !!p.proposedSizeUnit;
+
+/**
+ * Promote every ready pending item that has a complete AI proposal (name EN/AR, category, size):
+ *  - if the proposed name already matches a product (≥ 0.9), merge: the receipt text becomes a learned alias of it;
+ *  - otherwise create the product (+ aliases).
+ * Then backfill: earlier receipt lines with that text are linked and their prices recorded.
+ * Items without a complete proposal keep collecting sightings until one arrives.
+ */
+export function autoPromoteReady(opts: { now?: Date; db?: DB } = {}): AutoPromotion[] {
+  const db = opts.db ?? getDb();
+  const now = opts.now ?? new Date();
+  const out: AutoPromotion[] = [];
+  for (const p of listPending({ readyOnly: true, db })) {
+    if (!hasFullProposal(p)) continue;
+    let productId: number;
+    let action: AutoPromotion['action'];
+    const existing = matchLine(p.proposedNameEn!, { learn: false, db });
+    if (!existing.needsLLM && existing.confidence >= MERGE_THRESHOLD) {
+      productId = existing.productId;
+      action = 'merged';
+      learnAlias(productId, p.exampleRawText, { source: 'ai_match', now, db });
+      db.update(pendingProducts).set({ promotedProductId: productId }).where(eq(pendingProducts.id, p.id)).run();
+    } else {
+      const product = promotePending(
+        p.id,
+        { nameEn: p.proposedNameEn!, nameAr: p.proposedNameAr!, categoryId: p.proposedCategoryId!, sizeValue: p.proposedSizeValue!, sizeUnit: p.proposedSizeUnit!, brand: p.proposedBrand },
+        { db },
+      );
+      productId = product.id;
+      action = 'created';
+    }
+    const bf = backfillUnmatchedLines(p.aliasNormalized, productId, { now, db });
+    const name = db.select({ n: products.nameEn }).from(products).where(eq(products.id, productId)).get()?.n ?? '';
+    out.push({ pendingId: p.id, rawText: p.exampleRawText, action, productId, productNameEn: name, backfilledLines: bf.lines, backfilledObservations: bf.observations });
+  }
+  return out;
+}
+
+/** Link earlier 'unmatched' receipt lines whose text normalises to `aliasNormalized` and record their prices. */
+export function backfillUnmatchedLines(aliasNormalized: string, productId: number, opts: { now?: Date; db?: DB } = {}): { lines: number; observations: number } {
+  const db = opts.db ?? getDb();
+  const now = opts.now ?? new Date();
+  const rows = db
+    .select({ line: receiptLines, receipt: receipts })
+    .from(receiptLines)
+    .innerJoin(receipts, eq(receipts.id, receiptLines.receiptId))
+    .where(eq(receiptLines.status, 'unmatched'))
+    .all()
+    .filter((r) => normalizeAlias(r.line.rawText) === aliasNormalized);
+  let observations = 0;
+  for (const { line, receipt } of rows) {
+    db.update(receiptLines).set({ matchedProductId: productId, matchMethod: 'alias_exact', matchConfidence: 1, status: 'matched' }).where(eq(receiptLines.id, line.id)).run();
+    if (receipt.storeId != null && line.unitPriceKwd != null && line.unitPriceKwd > 0) {
+      const at = receipt.purchasedAt && receipt.purchasedAt <= now ? receipt.purchasedAt : receipt.uploadedAt;
+      recordObservation({ productId, storeId: receipt.storeId, priceKwd: line.unitPriceKwd, evidence: 'receipt', observedAt: at, confidence: 0.9, receiptLineId: line.id, userId: receipt.userId }, db);
+      observations++;
+    }
+  }
+  return { lines: rows.length, observations };
 }
