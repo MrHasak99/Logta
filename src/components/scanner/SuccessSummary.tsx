@@ -15,7 +15,8 @@ export default function SuccessSummary({ summary, onReset }: Props) {
   const describe = (d: PriceDelta): { text: string; tone: 'down' | 'up' | 'flat' | 'new' } => {
     const product = productName(products.find((p) => p.id === d.productId))
     const base = `${product} ${d.previousPrice === null ? t('newPriceAt') : t('updatedAt')} ${storeName(store)}: ${formatKwd(d.newPrice)}`
-    if (d.delta === null) return { text: `${base} (${t('firstPrice')})`, tone: 'new' }
+    const created = summary.newProductIds.includes(d.productId) ? ` · ${t('newProductTag')}` : ''
+    if (d.delta === null) return { text: `${base} (${t('firstPrice')})${created}`, tone: 'new' }
     if (Math.abs(d.delta) < 0.0005) return { text: `${base} (${t('unchangedPrev')})`, tone: 'flat' }
     const amount = Math.abs(d.delta).toFixed(3)
     return d.delta < 0
@@ -33,7 +34,8 @@ export default function SuccessSummary({ summary, onReset }: Props) {
         <p className="text-xs font-medium opacity-80">{storeName(store)}</p>
       </div>
 
-      <div className="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100 rtl:divide-x-reverse">
+      <div className="grid grid-cols-3 divide-x divide-slate-100 border-b border-slate-100 rtl:divide-x-reverse">
+        <Stat value={summary.newProductIds.length} label={t('newProductsAdded')} />
         <Stat value={summary.added} label={t('itemsAdded')} />
         <Stat value={summary.updated} label={t('itemsUpdated')} />
       </div>

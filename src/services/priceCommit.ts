@@ -5,10 +5,12 @@ import type {
   PriceDelta,
   PriceEntry,
   PriceSource,
+  Product,
   ScanRecord,
   ScanSummary,
 } from '../data/types'
 import { roundKwd } from '../utils/formatters'
+import { normalize } from './productMatcher'
 
 export const TRUST_WEIGHT: Record<DocumentType, number> = {
   receipt: 95,
@@ -45,10 +47,39 @@ export const applyScan = (data: AppData, input: CommitInput): { data: AppData; s
   const trust = TRUST_WEIGHT[input.documentType]
   const source: PriceSource = input.documentType === 'receipt' ? 'Receipt Scan' : 'Shelf Tag'
 
+  // Resolve every item to a product. Items with no database match create a new product
+  // (or reuse one with the same name, e.g. when the same new item appears twice in a scan).
+  const products: Product[] = [...data.products]
+  const newProductIds: string[] = []
+  const resolveProductId = (item: ExtractedItem): string | null => {
+    if (item.matchedProductId) return item.matchedProductId
+    const draft = item.newProduct
+    if (!draft) return null
+    const names = [draft.nameEn, draft.nameAr, item.rawText].map(normalize).filter(Boolean)
+    const existing = products.find((p) =>
+      [p.nameEn, p.nameAr, ...p.aliases].some((text) => names.includes(normalize(text))),
+    )
+    if (existing) return existing.id
+    const product: Product = {
+      id: newId('prod'),
+      nameEn: draft.nameEn || draft.nameAr,
+      nameAr: draft.nameAr || draft.nameEn,
+      category: draft.category,
+      unitSize: draft.unitSize,
+      // The printed text lets future scans of the same receipt line match this product directly.
+      aliases: item.rawText && item.rawText !== draft.nameEn ? [item.rawText] : [],
+    }
+    products.push(product)
+    newProductIds.push(product.id)
+    return product.id
+  }
+
   // De-duplicate by product: last occurrence wins.
   const byProduct = new Map<string, ExtractedItem>()
   for (const item of input.items) {
-    if (item.matchedProductId && item.priceKwd > 0) byProduct.set(item.matchedProductId, item)
+    if (item.priceKwd <= 0) continue
+    const productId = resolveProductId(item)
+    if (productId) byProduct.set(productId, item)
   }
 
   const newEntries: PriceEntry[] = []
@@ -76,7 +107,7 @@ export const applyScan = (data: AppData, input: CommitInput): { data: AppData; s
       priceKwd: newPrice,
       timestamp: now,
       source,
-      confidence: item.userEdited ? trust : Math.round((item.confidenceScore * trust) / 100),
+      confidence: Math.round((item.confidenceScore * trust) / 100),
       inStock: true, // a price seen on a receipt/shelf means the item was available
     })
   }
@@ -93,9 +124,10 @@ export const applyScan = (data: AppData, input: CommitInput): { data: AppData; s
   return {
     data: {
       ...data,
+      products,
       priceEntries: [...data.priceEntries, ...newEntries],
       scanRecords: [record, ...data.scanRecords],
     },
-    summary: { storeId: input.storeId, documentType: input.documentType, added, updated, deltas },
+    summary: { storeId: input.storeId, documentType: input.documentType, added, updated, deltas, newProductIds },
   }
 }

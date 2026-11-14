@@ -6,7 +6,7 @@ import ImageUploader, { type ScanSource } from './scanner/ImageUploader'
 import RecentScansFeed from './scanner/RecentScansFeed'
 import ScanningAnimation from './scanner/ScanningAnimation'
 import SuccessSummary from './scanner/SuccessSummary'
-import VerificationTable, { type ReviewState } from './scanner/VerificationTable'
+import VerificationTable, { initialDecisions, type ReviewState } from './scanner/VerificationTable'
 
 type Step =
   | { name: 'upload' }
@@ -39,6 +39,7 @@ export default function ReceiptScanner() {
         documentType: result.documentType,
         receiptDate: result.receiptDate,
         items: result.items,
+        decisions: initialDecisions(result.items),
       },
     })
   }
@@ -50,7 +51,8 @@ export default function ReceiptScanner() {
       storeId: review.storeId!,
       documentType: review.documentType,
       receiptDate: review.receiptDate,
-      items: review.items,
+      // Only lines the user explicitly confirmed are saved; rejected lines are dropped.
+      items: review.items.filter((i) => review.decisions[i.uid] === 'confirmed'),
     })
     setStep({ name: 'success', summary })
   }

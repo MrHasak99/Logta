@@ -41,6 +41,14 @@ export interface PriceEntry {
   inStock: boolean
 }
 
+/** Details for a product that is not in the database yet; it is created when the scan is confirmed. */
+export interface NewProductDraft {
+  nameEn: string
+  nameAr: string
+  category: Category
+  unitSize: string
+}
+
 export interface ExtractedItem {
   /** Local id for React keys / editing; not persisted as a product id */
   uid: string
@@ -51,8 +59,8 @@ export interface ExtractedItem {
   priceKwd: number
   /** 0-100 */
   confidenceScore: number
-  /** True once the user changed the product or price */
-  userEdited?: boolean
+  /** Present when no catalogue product matched: the product is added to the database on confirm */
+  newProduct?: NewProductDraft
 }
 
 export type ExtractionProvider = 'openrouter' | 'openai' | 'gemini' | 'simulated'
@@ -92,6 +100,8 @@ export interface ScanSummary {
   added: number
   updated: number
   deltas: PriceDelta[]
+  /** Ids of products that did not exist before this scan and were added to the database */
+  newProductIds: string[]
 }
 
 export interface AppData {

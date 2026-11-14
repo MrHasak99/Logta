@@ -1,9 +1,11 @@
 import { MOCK_RECEIPTS, type MockReceipt } from '../data/mockReceipts'
 import type {
+  Category,
   DocumentType,
   ExtractedItem,
   ExtractionProvider,
   ExtractionResult,
+  NewProductDraft,
   Product,
   Store,
 } from '../data/types'
@@ -70,6 +72,29 @@ const toNumber = (v: unknown): number => {
   return 0
 }
 
+/**
+ * When the model found no catalogue match, only accept a local match that is near-exact (known alias or
+ * identical name). Looser fuzzy matches (shared generic words like "spread 350g") would attach the price
+ * to the wrong product, and the user can no longer correct a match, only confirm or reject it.
+ */
+const MIN_LOCAL_MATCH = 80
+
+const CATEGORIES: Category[] = ['Dairy', 'Pantry', 'Beverages', 'Household']
+const ARABIC = /[\u0600-\u06FF]/
+
+const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
+
+/** Builds the details of a product that is missing from the database, from the model output / printed text. */
+const draftProduct = (raw: Record<string, unknown>, rawText: string): NewProductDraft => {
+  const en = str(raw.canonical_name_en)
+  const ar = str(raw.canonical_name_ar)
+  // Prefer the model's clean names; fall back to whatever was printed.
+  const nameEn = en || (ARABIC.test(rawText) ? '' : rawText) || ar || rawText
+  const nameAr = ar || (ARABIC.test(rawText) ? rawText : '')
+  const category = CATEGORIES.find((c) => c === raw.category) ?? 'Pantry'
+  return { nameEn, nameAr, category, unitSize: str(raw.unit_size) }
+}
+
 const toExtractedItem = (raw: Record<string, unknown>, products: Product[]): ExtractedItem | null => {
   const rawText = String(raw.raw_text ?? '').trim()
   const price = roundKwd(toNumber(raw.price_kwd))
@@ -80,20 +105,30 @@ const toExtractedItem = (raw: Record<string, unknown>, products: Product[]): Ext
 
   let product = products.find((p) => p.id === raw.matched_product_id)
   if (!product) {
-    const local = matchToProduct(rawText, products)
-    product = products.find((p) => p.id === local.productId)
-    if (product) conf = Math.min(conf || 100, local.confidence)
-    else conf = Math.min(conf || 40, 45)
+    // Try the printed text, then the model's clean name, against the whole database
+    // (including products added by earlier scans) before treating it as new.
+    const candidates = [rawText, str(raw.canonical_name_en), str(raw.canonical_name_ar)].filter(Boolean)
+    let best = { productId: null as string | null, confidence: 0 }
+    for (const text of candidates) {
+      const m = matchToProduct(text, products)
+      if (m.productId && m.confidence >= MIN_LOCAL_MATCH && m.confidence > best.confidence) best = m
+    }
+    product = products.find((p) => p.id === best.productId)
+    if (product) conf = Math.min(conf || 100, best.confidence)
   }
+
+  const newProduct = product ? undefined : draftProduct(raw, rawText)
+  if (!product && !newProduct?.nameEn && !newProduct?.nameAr) return null
 
   return {
     uid: uid(),
     rawText: rawText || product?.nameEn || 'Unknown item',
     matchedProductId: product?.id ?? null,
-    canonicalNameEn: product?.nameEn ?? '',
-    canonicalNameAr: product?.nameAr ?? '',
+    canonicalNameEn: product?.nameEn ?? newProduct?.nameEn ?? '',
+    canonicalNameAr: product?.nameAr ?? newProduct?.nameAr ?? '',
     priceKwd: price,
-    confidenceScore: Math.max(0, Math.min(100, Math.round(conf))),
+    confidenceScore: Math.max(0, Math.min(100, Math.round(conf || 60))),
+    newProduct,
   }
 }
 
@@ -150,14 +185,16 @@ const simulate = (
     .map((line) => {
       const match = matchToProduct(line.raw, products)
       const product = products.find((p) => p.id === match.productId)
+      const newProduct = product ? undefined : draftProduct({}, line.raw)
       return {
         uid: uid(),
         rawText: line.raw,
         matchedProductId: product?.id ?? null,
-        canonicalNameEn: product?.nameEn ?? '',
-        canonicalNameAr: product?.nameAr ?? '',
+        canonicalNameEn: product?.nameEn ?? newProduct?.nameEn ?? '',
+        canonicalNameAr: product?.nameAr ?? newProduct?.nameAr ?? '',
         priceKwd: roundKwd(line.price),
-        confidenceScore: product ? match.confidence : 30,
+        confidenceScore: product ? match.confidence : 60,
+        newProduct,
       } satisfies ExtractedItem
     })
   const store = stores.find((s) => s.id === receipt.storeId)
