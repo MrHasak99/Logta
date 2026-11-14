@@ -1,0 +1,14 @@
+# Logta API server on Replit — see docs/DEPLOY_REPLIT.md
+# (The Vite UI stays on Vercel; Replit only runs the API + SQLite database.)
+modules = ["nodejs-22"]
+entrypoint = "server/index.ts"
+run = "npm run server"
+
+[deployment]
+# Pick "Reserved VM" in the Publishing tool (one always-on process keeps the SQLite DB consistent).
+build = ["npm", "ci", "--include=dev"]
+run = ["npm", "run", "server"]
+
+[[ports]]
+localPort = 8787
+externalPort = 80

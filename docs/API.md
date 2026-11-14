@@ -8,7 +8,7 @@ npm install
 npm run server          # http://localhost:8787  (PORT to change). Seeds the DB on first start.
 ```
 
-It needs a host that **keeps the SQLite file** between requests: Replit, Railway, Render with a disk, Fly.io, or any VM.
+It needs a host that **keeps the SQLite file** between requests. **On Replit, follow [DEPLOY_REPLIT.md](DEPLOY_REPLIT.md)**: Reserved VM plus automatic Object Storage snapshots. Railway, Render with a disk, Fly.io or any VM also work.
 Vercel serverless functions can't do this, because the file resets between invocations. The Vercel UI calls this
 server over HTTPS (CORS allowlist below).
 
