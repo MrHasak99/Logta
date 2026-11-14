@@ -38,7 +38,7 @@ async function main() {
 
   // 3. Serve.
   const llm = createLlmClientFromEnv();
-  const origins = process.env.ALLOWED_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean) ?? DEFAULT_ORIGINS;
+  const origins = process.env.ALLOWED_ORIGINS?.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean) ?? DEFAULT_ORIGINS;
   const app = createApp({ db, llm, allowedOrigins: origins, adminToken: process.env.ADMIN_TOKEN || undefined });
   const port = Number(process.env.PORT ?? 8787);
   app.listen(port, () => {

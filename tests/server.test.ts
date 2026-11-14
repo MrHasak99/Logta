@@ -173,3 +173,19 @@ describe('API server: alerts detail, watch delete, receipts, recent prices', () 
     expect(feed.some((f) => f.priceKwd === 2.8)).toBe(false);
   });
 });
+
+describe('origin allowlist is forgiving about how it was pasted', () => {
+  it('accepts quotes, trailing slashes, paths and case differences', async () => {
+    const { normalizeOrigin } = await import('../server/app.ts');
+    expect(normalizeOrigin('"https://logta-alpha.vercel.app/"')).toBe('https://logta-alpha.vercel.app');
+    expect(normalizeOrigin(' https://Logta-Alpha.vercel.app/scan ')).toBe('https://logta-alpha.vercel.app');
+    expect(normalizeOrigin("'http://localhost:5173'")).toBe('http://localhost:5173');
+    const s = createApp({ db, llm: fake, now: () => NOW, allowedOrigins: ['"https://logta-alpha.vercel.app/"'] });
+    await new Promise<void>((r) => s.listen(0, '127.0.0.1', r));
+    const port = (s.address() as AddressInfo).port;
+    const res = await fetch(`http://127.0.0.1:${port}/api/stores`, { method: 'OPTIONS', headers: { origin: 'https://logta-alpha.vercel.app' } });
+    expect(res.status).toBe(204);
+    expect((await fetch(`http://127.0.0.1:${port}/api/stores`, { headers: { origin: 'https://evil.example' } })).status).toBe(403);
+    await new Promise<void>((r) => s.close(() => r()));
+  });
+});

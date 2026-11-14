@@ -52,6 +52,20 @@ export interface AppOptions {
   now?: () => Date;
 }
 
+/**
+ * Forgiving origin comparison: env values are often pasted with quotes, a trailing slash or a path
+ * ("https://logta-alpha.vercel.app/"), which would otherwise silently block every browser request.
+ */
+export function normalizeOrigin(raw: string): string {
+  const s = raw.trim().replace(/^['"]+|['"]+$/g, '').trim();
+  if (!s) return '';
+  try {
+    return new URL(s).origin.toLowerCase();
+  } catch {
+    return s.replace(/\/+$/, '').toLowerCase();
+  }
+}
+
 class HttpError extends Error {
   constructor(public status: number, message: string, public headers: Record<string, string> = {}) {
     super(message);
@@ -122,7 +136,8 @@ const latLng = (v: unknown): { lat: number; lng: number } | null => {
 // ---------------------------------------------------------------------------- app
 
 export function createApp(opts: AppOptions): Server {
-  const allowed = new Set(opts.allowedOrigins ?? DEFAULT_ORIGINS);
+  const allowed = new Set((opts.allowedOrigins ?? DEFAULT_ORIGINS).map(normalizeOrigin).filter(Boolean));
+  const isAllowed = (o: string | undefined) => !!o && allowed.has(normalizeOrigin(o));
   const now = opts.now ?? (() => new Date());
   const db = () => opts.db ?? getDb();
   const hits = new Map<string, number[]>();
@@ -147,7 +162,7 @@ export function createApp(opts: AppOptions): Server {
 
   return createServer(async (req, res) => {
     const origin = req.headers.origin;
-    const cors: Record<string, string> = origin && allowed.has(origin) ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {};
+    const cors: Record<string, string> = isAllowed(origin) ? { 'Access-Control-Allow-Origin': origin!, Vary: 'Origin' } : {};
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
       const path = url.pathname.replace(/\/+$/, '') || '/';
@@ -159,7 +174,7 @@ export function createApp(opts: AppOptions): Server {
         return res.end();
       }
       // Browsers from other sites are refused outright; non-browser callers (no Origin) may read but not scan.
-      if (origin && !allowed.has(origin)) throw new HttpError(403, 'Origin not allowed');
+      if (origin && !isAllowed(origin)) throw new HttpError(403, 'Origin not allowed');
       const ok = (body: unknown, status = 200) => send(res, status, body, cors);
 
       // ---------------- health & stats
