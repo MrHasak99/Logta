@@ -36,7 +36,7 @@ export function ingestUnmatched(
   rawText: string,
   userId: number | null,
   storeId: number | null,
-  opts: { proposal?: PendingProposal; now?: Date; db?: DB } = {},
+  opts: { proposal?: PendingProposal; /** true when this sighting came with a fresh AI decision */ aiDecided?: boolean; now?: Date; db?: DB } = {},
 ): IngestUnmatchedResult {
   const db = opts.db ?? getDb();
   const now = opts.now ?? new Date();
@@ -53,6 +53,7 @@ export function ingestUnmatched(
         distinctUsers: userIds.length, distinctStores: storeIds.length, userIdsJson: JSON.stringify(userIds), storeIdsJson: JSON.stringify(storeIds),
         proposedNameEn: opts.proposal?.nameEn ?? null, proposedNameAr: opts.proposal?.nameAr ?? null, proposedCategoryId: opts.proposal?.categoryId ?? null,
         proposedBrand: opts.proposal?.brand ?? null, proposedSizeValue: opts.proposal?.sizeValue ?? null, proposedSizeUnit: opts.proposal?.sizeUnit ?? null,
+        aiDecidedAt: opts.aiDecided ? now : null,
       })
       .returning()
       .get();
@@ -76,6 +77,7 @@ export function ingestUnmatched(
       proposedNameAr: existing.proposedNameAr ?? opts.proposal?.nameAr ?? null,
       proposedCategoryId: existing.proposedCategoryId ?? opts.proposal?.categoryId ?? null,
       proposedBrand: existing.proposedBrand ?? opts.proposal?.brand ?? null,
+      ...(opts.aiDecided ? { aiDecidedAt: now } : {}),
       // size value + unit travel together
       ...(existing.proposedSizeValue == null && opts.proposal?.sizeValue != null && opts.proposal.sizeUnit
         ? { proposedSizeValue: opts.proposal.sizeValue, proposedSizeUnit: opts.proposal.sizeUnit }

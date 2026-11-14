@@ -9,14 +9,15 @@
  * Every confident AI decision is written back as an alias, so the share of lines that need the LLM
  * keeps falling as more receipts are scanned.
  */
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { getDb, type DB } from '../db/client.ts';
-import { categories, receiptLines, receipts, stores, users } from '../db/schema.ts';
+import { categories, pendingProducts, receiptLines, receipts, stores, users } from '../db/schema.ts';
 import { autoPromoteReady, type AutoPromotion, type PendingProposal } from './catalog-growth.ts';
 import { ingestReceipt, resolveLineWithLlm, type IngestedLine, type IngestReport } from './ingest.ts';
 import type { LlmClient } from './llm-client.ts';
 import type { LlmMatchChoice, ReceiptExtraction } from './llm-contract.ts';
 import { matchLine } from './matching.ts';
+import { normalizeAlias } from './normalize.ts';
 import type { AlertResult } from './alerts.ts';
 
 export interface ScanOptions {
@@ -32,6 +33,8 @@ export interface ScanReport extends IngestReport {
   llm: string | null;
   /** LLM calls made for this receipt (call 1 not included when the extraction was passed in). */
   llmCalls: number;
+  /** AI calls avoided because the AI had already decided on that unknown text recently. */
+  llmSkipped: number;
   llmErrors: string[];
   autoPromoted: AutoPromotion[];
 }
@@ -56,6 +59,19 @@ function proposalFrom(choice: LlmMatchChoice, idBySlug: Map<string, number>): Pe
     sizeValue: choice.proposed_size_value,
     sizeUnit: choice.proposed_size_unit,
   };
+}
+
+/** How long an AI decision about an unknown text is reused before the AI is asked again. */
+export const AI_DECISION_TTL_DAYS = 7;
+
+/** True if the AI already decided on this (still unknown) text within the TTL — then we just count the sighting. */
+export function hasRecentAiDecision(rawText: string, now: Date, db: DB): boolean {
+  const row = db
+    .select({ at: pendingProducts.aiDecidedAt })
+    .from(pendingProducts)
+    .where(and(eq(pendingProducts.aliasNormalized, normalizeAlias(rawText)), isNull(pendingProducts.promotedProductId)))
+    .get();
+  return !!row?.at && now.getTime() - row.at.getTime() < AI_DECISION_TTL_DAYS * 86_400_000;
 }
 
 function recount(report: IngestReport): void {
@@ -87,6 +103,7 @@ async function resolveWithLlm(
       proposedNameEn: choice.proposed_name_en,
       proposedNameAr: choice.proposed_name_ar,
       proposal: proposalFrom(choice, cats.idBySlug),
+      aiDecided: true,
       now,
       db,
     });
@@ -100,15 +117,24 @@ export async function processExtraction(extraction: ReceiptExtraction, opts: Sca
   const db = opts.db ?? getDb();
   const now = opts.now ?? new Date();
   const base = ingestReceipt(extraction, { userId: opts.userId, storeId: opts.storeId, llmModel: opts.llm?.name ?? null, now, db });
-  const report: ScanReport = { ...base, llm: opts.llm?.name ?? null, llmCalls: 0, llmErrors: [], autoPromoted: [] };
+  const report: ScanReport = { ...base, llm: opts.llm?.name ?? null, llmCalls: 0, llmSkipped: 0, llmErrors: [], autoPromoted: [] };
 
-  if (opts.llm) {
+  {
     const cats = categoryMaps(db);
     for (let i = 0; i < report.lines.length; i++) {
       const line = report.lines[i]!;
       if (!line.needsLLM) continue;
-      report.llmCalls++;
-      const res = await resolveWithLlm(line, report.storeNameEn, opts.llm, cats, db, now);
+      let res: Awaited<ReturnType<typeof resolveWithLlm>>;
+      if (hasRecentAiDecision(line.rawText, now, db)) {
+        // already decided: count the sighting (keeps the earlier proposal), no AI call — works even without an LLM
+        res = resolveLineWithLlm(line.lineId, null, { confidence: 0, aiDecided: false, now, db });
+        report.llmSkipped++;
+      } else if (!opts.llm) {
+        continue; // stays needs_review until retryNeedsReview() runs with an LLM
+      } else {
+        report.llmCalls++;
+        res = await resolveWithLlm(line, report.storeNameEn, opts.llm, cats, db, now);
+      }
       if ('error' in res) {
         report.llmErrors.push(`${line.rawText}: ${res.error}`);
         continue;
@@ -141,7 +167,7 @@ export async function processReceiptImage(imageDataUrl: string, opts: ScanOption
  * Finish lines left `needs_review` (LLM was down or not configured). Lines that now hit an alias learned
  * since they were scanned are resolved without the LLM. Then runs auto-promotion.
  */
-export async function retryNeedsReview(opts: { llm: LlmClient | null; limit?: number; now?: Date; db?: DB }): Promise<{ resolved: number; viaAlias: number; llmCalls: number; errors: string[]; autoPromoted: AutoPromotion[] }> {
+export async function retryNeedsReview(opts: { llm: LlmClient | null; limit?: number; now?: Date; db?: DB }): Promise<{ resolved: number; viaAlias: number; llmCalls: number; llmSkipped: number; errors: string[]; autoPromoted: AutoPromotion[] }> {
   const db = opts.db ?? getDb();
   const now = opts.now ?? new Date();
   const cats = categoryMaps(db);
@@ -153,7 +179,7 @@ export async function retryNeedsReview(opts: { llm: LlmClient | null; limit?: nu
     .where(eq(receiptLines.status, 'needs_review'))
     .limit(opts.limit ?? 100)
     .all();
-  let resolved = 0, viaAlias = 0, llmCalls = 0;
+  let resolved = 0, viaAlias = 0, llmCalls = 0, llmSkipped = 0;
   const errors: string[] = [];
   for (const { line, receipt, storeName } of pending) {
     const m = matchLine(line.rawText, { storeId: receipt.storeId, now, db });
@@ -163,13 +189,19 @@ export async function retryNeedsReview(opts: { llm: LlmClient | null; limit?: nu
       viaAlias++;
       continue;
     }
+    if (hasRecentAiDecision(line.rawText, now, db)) {
+      resolveLineWithLlm(line.id, null, { confidence: 0, aiDecided: false, now, db });
+      resolved++;
+      llmSkipped++;
+      continue;
+    }
     if (!opts.llm) continue;
     llmCalls++;
     const res = await resolveWithLlm({ lineId: line.id, rawText: line.rawText, candidates: m.candidates }, storeName, opts.llm, cats, db, now);
     if ('error' in res) errors.push(`${line.rawText}: ${res.error}`);
     else resolved++;
   }
-  return { resolved, viaAlias, llmCalls, errors, autoPromoted: autoPromoteReady({ now, db }) };
+  return { resolved, viaAlias, llmCalls, llmSkipped, errors, autoPromoted: autoPromoteReady({ now, db }) };
 }
 
 /** Anonymous per-device user (no auth). Creates the user on first sight. */

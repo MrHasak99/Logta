@@ -145,3 +145,49 @@ describe('getOrCreateUser', () => {
     expect(() => getOrCreateUser('   ', { db })).toThrow();
   });
 });
+
+describe('AI is asked only once per unknown text', () => {
+  it('later sightings are counted without calling the AI, and promotion still happens', async () => {
+    const llm = fakeLlm({ 'ZAATAR MANAKEESH 4PC': ZAATAR });
+    const r1 = await processExtraction(receipt('MISHREF CO-OP', [['ZAATAR MANAKEESH 4PC', 0.6]]), { userId: u[0], llm, now: NOW, db });
+    const r2 = await processExtraction(receipt('LULU', [['ZAATAR MANAKEESH 4PC', 0.65]]), { userId: u[0], llm, now: NOW, db });
+    const r3 = await processExtraction(receipt('CARREFOUR AVENUES', [['ZAATAR MANAKEESH 4PC', 0.6]]), { userId: u[1], llm, now: NOW, db });
+    expect(llm.calls).toEqual(['ZAATAR MANAKEESH 4PC']); // 3 sightings, 1 AI call
+    expect([r1.llmCalls, r2.llmCalls, r3.llmCalls]).toEqual([1, 0, 0]);
+    expect([r1.llmSkipped, r2.llmSkipped, r3.llmSkipped]).toEqual([0, 1, 1]);
+    expect(r2.lines[0]).toMatchObject({ status: 'unmatched', needsLLM: false });
+    expect(r3.autoPromoted[0]).toMatchObject({ action: 'created', backfilledObservations: 3 });
+  });
+
+  it('"not a product" decisions are reused too', async () => {
+    const llm = fakeLlm({ 'BAG CHARGE': {} });
+    for (const user of [u[0], u[1], u[2]]) await processExtraction(receipt('LULU', [['BAG CHARGE', 0.025]]), { userId: user, llm, now: NOW, db });
+    expect(llm.calls).toHaveLength(1);
+    expect(db.select().from(pendingProducts).get()!).toMatchObject({ seenCount: 3, promotedProductId: null });
+  });
+
+  it('asks the AI again once the decision is older than 7 days', async () => {
+    const llm = fakeLlm({ 'BAG CHARGE': {} });
+    await processExtraction(receipt('LULU', [['BAG CHARGE', 0.025]]), { userId: u[0], llm, now: NOW, db });
+    const later = new Date(NOW.getTime() + 8 * 86_400_000);
+    await processExtraction(receipt('LULU', [['BAG CHARGE', 0.025]]), { userId: u[1], llm, now: later, db });
+    expect(llm.calls).toHaveLength(2);
+  });
+
+  it('counts known unknown items even when no AI is configured', async () => {
+    await processExtraction(receipt('LULU', [['ZAATAR MANAKEESH 4PC', 0.6]]), { userId: u[0], llm: fakeLlm({ 'ZAATAR MANAKEESH 4PC': ZAATAR }), now: NOW, db });
+    const r = await processExtraction(receipt('LULU', [['ZAATAR MANAKEESH 4PC', 0.6]]), { userId: u[1], llm: null, now: NOW, db });
+    expect(r.lines[0]).toMatchObject({ status: 'unmatched', needsLLM: false });
+    expect(r.status).toBe('processed');
+    expect(db.select().from(pendingProducts).get()!.seenCount).toBe(2);
+  });
+
+  it('retryNeedsReview also skips the AI for known unknown text', async () => {
+    await processExtraction(receipt('LULU', [['ZAATAR MANAKEESH 4PC', 0.6]]), { userId: u[0], llm: fakeLlm({ 'ZAATAR MANAKEESH 4PC': new Error('down') }), now: NOW, db });
+    await processExtraction(receipt('LULU', [['ZAATAR MANAKEESH 4PC', 0.6]]), { userId: u[1], llm: fakeLlm({ 'ZAATAR MANAKEESH 4PC': ZAATAR }), now: NOW, db });
+    const llm = fakeLlm({});
+    const res = await retryNeedsReview({ llm, now: NOW, db });
+    expect(res).toMatchObject({ resolved: 1, llmSkipped: 1, llmCalls: 0 });
+    expect(llm.calls).toHaveLength(0);
+  });
+});
