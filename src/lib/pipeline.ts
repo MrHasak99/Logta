@@ -112,6 +112,23 @@ async function resolveWithLlm(
   }
 }
 
+/** Max AI calls in flight per receipt (keeps provider rate limits happy). */
+export const LLM_CONCURRENCY = 6;
+
+/** Promise.all with at most `limit` tasks running at once; results keep input order. */
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]!, i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
 /** Process an already-extracted receipt (e.g. from api/extract or a fixture) end-to-end. */
 export async function processExtraction(extraction: ReceiptExtraction, opts: ScanOptions): Promise<ScanReport> {
   const db = opts.db ?? getDb();
@@ -121,23 +138,11 @@ export async function processExtraction(extraction: ReceiptExtraction, opts: Sca
 
   {
     const cats = categoryMaps(db);
-    for (let i = 0; i < report.lines.length; i++) {
+    const apply = (i: number, res: (IngestedLine & { alerts?: AlertResult[] }) | { error: string }) => {
       const line = report.lines[i]!;
-      if (!line.needsLLM) continue;
-      let res: Awaited<ReturnType<typeof resolveWithLlm>>;
-      if (hasRecentAiDecision(line.rawText, now, db)) {
-        // already decided: count the sighting (keeps the earlier proposal), no AI call — works even without an LLM
-        res = resolveLineWithLlm(line.lineId, null, { confidence: 0, aiDecided: false, now, db });
-        report.llmSkipped++;
-      } else if (!opts.llm) {
-        continue; // stays needs_review until retryNeedsReview() runs with an LLM
-      } else {
-        report.llmCalls++;
-        res = await resolveWithLlm(line, report.storeNameEn, opts.llm, cats, db, now);
-      }
       if ('error' in res) {
         report.llmErrors.push(`${line.rawText}: ${res.error}`);
-        continue;
+        return;
       }
       const { alerts, ...finished } = res;
       report.lines[i] = finished;
@@ -145,6 +150,62 @@ export async function processExtraction(extraction: ReceiptExtraction, opts: Sca
       if (finished.observation?.status === 'quarantined') report.quarantined++;
       if (finished.pendingId != null && !report.pendingIds.includes(finished.pendingId)) report.pendingIds.push(finished.pendingId);
       if (alerts) report.alerts.push(...alerts);
+    };
+
+    // 1. Unknown text the AI already decided on recently: just count the sighting (no AI, works without an LLM).
+    // 2. Everything else is grouped by normalised text so identical lines share one AI call.
+    const groups = new Map<string, number[]>();
+    for (let i = 0; i < report.lines.length; i++) {
+      const line = report.lines[i]!;
+      if (!line.needsLLM) continue;
+      if (hasRecentAiDecision(line.rawText, now, db)) {
+        apply(i, resolveLineWithLlm(line.lineId, null, { confidence: 0, aiDecided: false, now, db }));
+        report.llmSkipped++;
+        continue;
+      }
+      if (!opts.llm) continue; // stays needs_review until retryNeedsReview() runs with an LLM
+      const key = normalizeAlias(line.rawText);
+      const g = groups.get(key);
+      if (g) g.push(i);
+      else groups.set(key, [i]);
+    }
+
+    // 3. Ask the AI in parallel (bounded), one call per unique text — the slow part of a first scan.
+    const llm = opts.llm;
+    const entries = [...groups.values()];
+    const choices = llm
+      ? await mapLimit(entries, LLM_CONCURRENCY, async (idx) => {
+          const line = report.lines[idx[0]!]!;
+          try {
+            return { choice: await llm.choose({ rawText: line.rawText, candidates: line.candidates ?? [], storeName: report.storeNameEn, categories: cats.list }) };
+          } catch (e) {
+            return { error: e instanceof Error ? e.message : String(e) };
+          }
+        })
+      : [];
+    report.llmCalls += entries.length;
+
+    // 4. Apply the decisions sequentially, in receipt order (all DB writes stay single-threaded).
+    const decided = new Map<number, { choice?: LlmMatchChoice; error?: string; first: boolean }>();
+    entries.forEach((idx, g) => idx.forEach((i, k) => decided.set(i, { ...choices[g]!, first: k === 0 })));
+    for (const [i, d] of [...decided.entries()].sort((a, b) => a[0] - b[0])) {
+      const line = report.lines[i]!;
+      if (!d.choice) {
+        apply(i, { error: d.error ?? 'AI call failed' });
+        continue;
+      }
+      apply(
+        i,
+        resolveLineWithLlm(line.lineId, d.choice.product_id, {
+          confidence: d.choice.confidence,
+          proposedNameEn: d.choice.proposed_name_en,
+          proposedNameAr: d.choice.proposed_name_ar,
+          proposal: proposalFrom(d.choice, cats.idBySlug),
+          aiDecided: d.first,
+          now,
+          db,
+        }),
+      );
     }
   }
 

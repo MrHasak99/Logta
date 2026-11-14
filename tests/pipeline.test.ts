@@ -191,3 +191,55 @@ describe('AI is asked only once per unknown text', () => {
     expect(llm.calls).toHaveLength(0);
   });
 });
+
+describe('parallel AI calls', () => {
+  it('asks the AI for different lines concurrently (bounded) and applies results in receipt order', async () => {
+    const shampoo = pid('headshoulders-shampoo-400ml');
+    let inFlight = 0, maxInFlight = 0;
+    const calls: string[] = [];
+    const slow: LlmClient = {
+      name: 'slow',
+      extract: async () => receipt('X', []),
+      choose: async ({ rawText }) => {
+        calls.push(rawText);
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 300));
+        inFlight--;
+        return rawText === 'H/S SHMP CLSC CLN 400' ? { product_id: shampoo, confidence: 0.92, ...NONE } : { product_id: null, confidence: 0, ...NONE };
+      },
+    };
+    const unknown = Array.from({ length: 7 }, (_, i) => [`MYSTERY ITEM ${String.fromCharCode(65 + i)}Q`, 0.5 + i / 10] as [string, number]);
+    const lines: [string, number][] = [['H/S SHMP CLSC CLN 400', 1.85], ...unknown, ['TILDA BSMTI 5KG', 4.75]];
+    const t0 = Date.now();
+    const r = await processExtraction(receipt('LULU HYPERMARKET', lines), { userId: u[0], llm: slow, now: NOW, db });
+    const ms = Date.now() - t0;
+    expect(calls).toHaveLength(8);
+    expect(maxInFlight).toBe(6); // LLM_CONCURRENCY
+    expect(ms).toBeLessThan(8 * 300); // sequential would be ≥ 2.4 s
+    expect(r.llmCalls).toBe(8);
+    expect(r.lines.map((l) => l.rawText)).toEqual(lines.map(([t]) => t)); // order preserved
+    expect(r.lines[0]).toMatchObject({ method: 'llm', productId: shampoo, status: 'matched' });
+    expect(r.lines.slice(1, 8).every((l) => l.status === 'unmatched')).toBe(true);
+    expect(r.lines[8]).toMatchObject({ method: 'alias_exact' });
+  });
+
+  it('identical lines in one receipt share a single AI call', async () => {
+    const llm = fakeLlm({ 'ZAATAR MANAKEESH 4PC': ZAATAR });
+    const r = await processExtraction(receipt('LULU', [['ZAATAR MANAKEESH 4PC', 0.6], ['zaatar manakeesh 4 pc', 0.6], ['ZAATAR MANAKEESH 4PC', 0.6]]), { userId: u[0], llm, now: NOW, db });
+    expect(llm.calls).toHaveLength(1);
+    expect(r.llmCalls).toBe(1);
+    expect(r.lines.every((l) => l.status === 'unmatched')).toBe(true);
+    expect(db.select().from(pendingProducts).get()!.seenCount).toBe(3);
+  });
+
+  it('one failing AI call does not affect the others', async () => {
+    const shampoo = pid('headshoulders-shampoo-400ml');
+    const llm = fakeLlm({ 'H/S SHMP CLSC CLN 400': { product_id: shampoo, confidence: 0.92 }, 'ZAATAR MANAKEESH 4PC': new Error('timeout') });
+    const r = await processExtraction(receipt('LULU', [['ZAATAR MANAKEESH 4PC', 0.6], ['H/S SHMP CLSC CLN 400', 1.85]]), { userId: u[0], llm, now: NOW, db });
+    expect(r.lines[0]!.status).toBe('needs_review');
+    expect(r.lines[1]).toMatchObject({ status: 'matched', productId: shampoo });
+    expect(r.llmErrors).toEqual(['ZAATAR MANAKEESH 4PC: timeout']);
+    expect(r.status).toBe('partial');
+  });
+});
