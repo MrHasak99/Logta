@@ -30,7 +30,7 @@ npm run demo:fresh     # reset DB + ingest all 4 (same as db:reset then demo:ing
 |---|---|
 | lines processed | 26 |
 | exact alias / fuzzy / LLM / unmatched | 19 / 3 / 1 / 3 |
-| LLM calls needed | 4 (3 of them are the unknown zaatar item) |
+| AI calls needed | 2 (the abbreviated shampoo line + the first zaatar sighting; the 2 later zaatar sightings reuse the AI's decision for free) |
 | learned aliases added | 3 |
 | quarantined prices | 1 |
 | alerts fired | 1 |

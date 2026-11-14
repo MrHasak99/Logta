@@ -193,6 +193,8 @@ export const pendingProducts = sqliteTable(
     proposedBrand: text('proposed_brand'),
     proposedSizeValue: real('proposed_size_value'),
     proposedSizeUnit: text('proposed_size_unit', { enum: SIZE_UNITS }),
+    /** When the AI last decided on this text (proposal or "not a product"). Later sightings skip the AI for a while. */
+    aiDecidedAt: ts('ai_decided_at'),
     promotedProductId: integer('promoted_product_id').references(() => products.id),
   },
 );

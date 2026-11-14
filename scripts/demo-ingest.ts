@@ -75,7 +75,7 @@ for (const [i, file] of files.entries()) {
 const methodIcon: Record<string, string> = { alias_exact: '🎯 exact', alias_fuzzy: '〰️ fuzzy', llm: '🤖 llm', none: '❓ none' };
 console.log('\n══════════ Logta demo: 4 receipts through the automatic pipeline ══════════');
 for (const { file, r } of reports) {
-  console.log(`\n📄 ${file}  →  store: ${r.storeNameEn ?? '(unresolved)'}  ·  status: ${r.status}  ·  AI calls: ${r.llmCalls}`);
+  console.log(`\n📄 ${file}  →  store: ${r.storeNameEn ?? '(unresolved)'}  ·  status: ${r.status}  ·  AI calls: ${r.llmCalls}${r.llmSkipped ? ` (${r.llmSkipped} skipped: already decided)` : ''}`);
   for (const l of r.lines) {
     const obs = l.observation ? `${l.observation.status}${l.observation.status === 'quarantined' ? ` (median ${l.observation.referenceMedian})` : ''}` : l.pendingId ? `→ unknown item #${l.pendingId}` : '';
     console.log(
@@ -89,13 +89,14 @@ for (const { file, r } of reports) {
 }
 
 const totals = { alias_exact: 0, alias_fuzzy: 0, llm: 0, none: 0 };
-let learned = 0, quarantined = 0, alertsFired = 0, promoted = 0;
+let learned = 0, quarantined = 0, alertsFired = 0, promoted = 0, skipped = 0;
 for (const { r } of reports) {
   for (const k of Object.keys(totals) as (keyof typeof totals)[]) totals[k] += r.counts[k];
   learned += r.learnedAliases;
   quarantined += r.quarantined;
   alertsFired += r.alerts.length;
   promoted += r.autoPromoted.length;
+  skipped += r.llmSkipped;
 }
 const lineCount = reports.reduce((a, x) => a + x.r.lines.length, 0);
 
@@ -107,6 +108,7 @@ console.table({
   'matched by AI (mock)': totals.llm,
   'unknown → collected': totals.none,
   'AI calls needed': llmCalls,
+  'AI calls avoided (known unknowns)': skipped,
   'learned aliases added': learned,
   'quarantined prices': quarantined,
   'alerts fired': alertsFired,

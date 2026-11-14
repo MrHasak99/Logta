@@ -11,7 +11,7 @@
 ```bash
 npm install            # .npmrc skips native compiles; better-sqlite3 ships prebuilt binaries
 npm run db:reset       # drop → migrate → seed  (SQLite file: data/logta.db, override with LOGTA_DB_PATH)
-npm test               # vitest, 66 tests
+npm test               # vitest, 71 tests
 npm run demo:ingest    # 4 fixture receipts through the automatic pipeline  (demo:fresh = reset + ingest)
 npm run server         # HTTP API for the UI (see docs/API.md)
 npm run typecheck:server
@@ -84,7 +84,7 @@ Key indexes: `price_observations(product_id, store_id, observed_at)`, `product_a
 | `checkAlerts(obs)` | accepted observation ≤ target → alert with 30-day min/avg/max; "buy now" if within 3% of the 30-day minimum, otherwise "a lower price was seen recently" |
 | `ingestUnmatched` / `promotePending` | upsert unknown text (with the AI's proposed name, brand, category, size); ready when `seen_count ≥ 3` and `distinct_users ≥ 2` |
 | `autoPromoteReady()` | **no human:** ready items with a complete AI proposal become products, or are merged into an existing product when the proposal matches one (≥ 0.9). Earlier receipt prices are then backfilled. Lines the AI calls "not a product" (bag fees, deposits) are never promoted |
-| `processReceiptImage` / `processExtraction` / `retryNeedsReview` | the automatic pipeline (`pipeline.ts`); takes any `LlmClient`, and `createLlmClientFromEnv()` builds the real one (OpenRouter > OpenAI > Gemini) |
+| `processReceiptImage` / `processExtraction` / `retryNeedsReview` | the automatic pipeline (`pipeline.ts`). Unknown text goes to the AI once; for 7 days afterwards later sightings reuse that decision (`pending_products.ai_decided_at`); takes any `LlmClient`, and `createLlmClientFromEnv()` builds the real one (OpenRouter > OpenAI > Gemini) |
 | `ingestReceipt` / `resolveLineWithLlm` | the end-to-end pipeline used by the API |
 | `llm-contract.ts` | types, JSON schemas and the exact system prompts for LLM call 1 (extraction) and call 2 (choose a candidate or null). This layer never calls an LLM |
 

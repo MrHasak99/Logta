@@ -1,0 +1,1 @@
+ALTER TABLE `pending_products` ADD `ai_decided_at` integer;

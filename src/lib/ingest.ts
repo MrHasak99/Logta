@@ -70,6 +70,8 @@ export interface LlmDecision {
   proposedNameEn?: string | null;
   proposedNameAr?: string | null;
   proposal?: PendingProposal;
+  /** false when the pipeline skipped the AI because it already decided on this text recently */
+  aiDecided?: boolean;
 }
 
 export interface IngestOptions {
@@ -134,7 +136,7 @@ function finishWithChoice(ctx: Ctx, line: IngestedLine, choice: LlmDecision): vo
     ctx.db.update(receiptLines).set({ matchedProductId: choice.productId, matchMethod: 'llm', matchConfidence: line.confidence, status: 'matched' }).where(eq(receiptLines.id, line.lineId)).run();
     recordForLine(ctx, line, choice.productId, choice.confidence);
   } else {
-    const p = ingestUnmatched(line.rawText, ctx.userId, ctx.storeId, { proposal: { nameEn: choice.proposedNameEn ?? null, nameAr: choice.proposedNameAr ?? null, ...choice.proposal }, now: ctx.now, db: ctx.db });
+    const p = ingestUnmatched(line.rawText, ctx.userId, ctx.storeId, { proposal: { nameEn: choice.proposedNameEn ?? null, nameAr: choice.proposedNameAr ?? null, ...choice.proposal }, aiDecided: choice.aiDecided ?? true, now: ctx.now, db: ctx.db });
     Object.assign(line, { status: 'unmatched' as const, method: 'none' as const, needsLLM: false, candidates: undefined, pendingId: p.pending.id });
     if (!ctx.report.pendingIds.includes(p.pending.id)) ctx.report.pendingIds.push(p.pending.id);
     ctx.db.update(receiptLines).set({ status: 'unmatched', matchMethod: 'none' }).where(eq(receiptLines.id, line.lineId)).run();
@@ -204,7 +206,7 @@ export function ingestReceipt(extraction: ReceiptExtraction, opts: IngestOptions
 export function resolveLineWithLlm(
   lineId: number,
   productId: number | null,
-  opts: { confidence?: number; proposedNameEn?: string | null; proposedNameAr?: string | null; proposal?: PendingProposal; userConfirmed?: boolean; now?: Date; db?: DB } = {},
+  opts: { confidence?: number; proposedNameEn?: string | null; proposedNameAr?: string | null; proposal?: PendingProposal; aiDecided?: boolean; userConfirmed?: boolean; now?: Date; db?: DB } = {},
 ): IngestedLine {
   const db = opts.db ?? getDb();
   const now = opts.now ?? new Date();
@@ -222,7 +224,7 @@ export function resolveLineWithLlm(
     productId: null, productNameEn: null, aliasLearned: false, observation: null, needsLLM: true,
   };
   const confidence = opts.userConfirmed ? Math.max(opts.confidence ?? 1, LEARN_THRESHOLD) : (opts.confidence ?? 0.9);
-  finishWithChoice(ctx, line, { productId, confidence, proposedNameEn: opts.proposedNameEn, proposedNameAr: opts.proposedNameAr, proposal: opts.proposal });
+  finishWithChoice(ctx, line, { productId, confidence, proposedNameEn: opts.proposedNameEn, proposedNameAr: opts.proposedNameAr, proposal: opts.proposal, aiDecided: opts.aiDecided });
   // receipt becomes processed once no line needs review
   const remaining = db.select().from(receiptLines).where(eq(receiptLines.receiptId, r.id)).all().filter((l) => l.status === 'needs_review').length;
   if (!remaining && r.storeId != null) db.update(receipts).set({ status: 'processed' }).where(eq(receipts.id, r.id)).run();
