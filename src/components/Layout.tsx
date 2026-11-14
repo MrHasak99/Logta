@@ -1,5 +1,5 @@
 import { Languages, RotateCcw } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useApp } from '../context/AppContext'
 import logo from '../assets/logo.png'
 import BottomNav, { type TabId } from './BottomNav'
@@ -15,6 +15,22 @@ interface Props {
 export default function Layout({ tab, onTabChange, children, alertsBadge }: Props) {
   const { t, toggleLang, resetDemoData } = useApp()
   const [confirmOpen, setConfirmOpen] = useState(false)
+  // The header slides away while scrolling down and returns on any upward scroll or near the top.
+  const [headerHidden, setHeaderHidden] = useState(false)
+  const lastY = useRef(0)
+
+  useEffect(() => {
+    const onScroll = () => {
+      const y = Math.max(0, window.scrollY)
+      const delta = y - lastY.current
+      if (y < 80) setHeaderHidden(false)
+      else if (delta > 6) setHeaderHidden(true)
+      else if (delta < -6) setHeaderHidden(false)
+      lastY.current = y
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   useEffect(() => {
     if (!confirmOpen) return
@@ -30,7 +46,9 @@ export default function Layout({ tab, onTabChange, children, alertsBadge }: Prop
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-[480px] flex-col bg-paper shadow-xl">
-      <header className="sticky top-0 z-20 rounded-b-[1.75rem] bg-navy px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-4 text-white shadow-soft">
+      <header
+        inert={headerHidden}
+        className={`sticky top-0 z-20 rounded-b-[1.75rem] bg-navy transition-transform duration-300 ease-out ${headerHidden ? '-translate-y-[120%]' : 'translate-y-0'} px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-4 text-white shadow-soft`}>
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-3">
             {/* The logo is deep teal on transparent; brightness-0 + invert turns it white for the dark header. */}
