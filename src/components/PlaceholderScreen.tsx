@@ -6,21 +6,23 @@ interface Props {
   icon: LucideIcon
   title: TKey
   description: TKey
-  featureNumber: number
+  /** Kept for compatibility with existing callers; no longer shown in the UI. */
+  featureNumber?: number
 }
 
-export default function PlaceholderScreen({ icon: Icon, title, description, featureNumber }: Props) {
+/** Branded "coming soon" screen for features that are not built yet. Presentation only. */
+export default function PlaceholderScreen({ icon: Icon, title, description }: Props) {
   const { t } = useApp()
   return (
-    <div className="flex flex-col items-center px-6 py-16 text-center">
-      <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-navy text-brand">
-        <Icon size={36} />
+    <div className="px-4 py-8">
+      <div className="bg-khatam animate-fade-up overflow-hidden rounded-3xl bg-navy px-6 py-12 text-center text-white shadow-soft">
+        <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-navy-800 shadow-[0_0_0_10px_rgb(34_197_139/0.15)]">
+          <Icon size={42} className="text-brand" aria-hidden="true" />
+        </div>
+        <span className="inline-block rounded-full bg-gold px-4 py-1.5 text-sm font-bold text-navy">{t('comingSoon')}</span>
+        <h2 className="mt-4 text-2xl font-bold">{t(title)}</h2>
+        <p className="mx-auto mt-3 max-w-[300px] text-base leading-relaxed text-white/75">{t(description)}</p>
       </div>
-      <span className="mb-3 rounded-full bg-brand-light px-3 py-1 text-xs font-bold tracking-wide text-brand-dark uppercase">
-        {t('comingSoon')} · Feature {featureNumber}
-      </span>
-      <h2 className="text-xl font-bold text-navy">{t(title)}</h2>
-      <p className="mt-2 max-w-xs text-sm leading-relaxed text-slate-500">{t(description)}</p>
     </div>
   )
 }
