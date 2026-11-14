@@ -1,3 +1,5 @@
+import { basketAlertsAr, basketAlertsEn } from './i18nBasketAlerts'
+
 export type Lang = 'en' | 'ar'
 
 const en = {
@@ -127,6 +129,7 @@ const en = {
   feedDemoTitle: 'Demo estimates',
   feedShowAll: 'Show all {n}',
   feedShowLess: 'Show less',
+  ...basketAlertsEn,
 }
 
 export type TKey = keyof typeof en
@@ -257,6 +260,7 @@ const ar: Record<TKey, string> = {
   feedDemoTitle: 'تقديرات تجريبية',
   feedShowAll: 'عرض الكل ({n})',
   feedShowLess: 'عرض أقل',
+  ...basketAlertsAr,
 }
 
 export const dictionaries: Record<Lang, Record<TKey, string>> = { en, ar }

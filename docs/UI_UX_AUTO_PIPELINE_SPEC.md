@@ -4,6 +4,51 @@ Status: **specification only** (no production UI changed). Branch `ui-ux-auto-pi
 Source of truth for data: `docs/API.md`, `docs/DATA_MODEL.md`, `server/app.ts`, `src/lib/*`.
 Design language is unchanged: see `docs/UI_UX_HANDOFF.md` (palette, Inter + IBM Plex Sans Arabic, 44px targets, RTL via logical utilities, `.btn` / `.card` / chips).
 
+
+---
+
+## Update: API commit `460ceab` (supersedes the older statements below)
+
+Abdullah's backend now provides the capabilities this spec was waiting for. Where this section and a later section disagree, **this section wins**.
+
+| Topic | Now true (from `docs/API.md` and the code) | UI consequence |
+|---|---|---|
+| Remove a watch | `DELETE /api/watchlist/:id?deviceId=` (or `POST /api/watchlist/:id/delete`). Soft delete: past alerts are kept. | Remove button ships, with an inline two-step confirm (`WatchCard`). |
+| Alerts | `GET /api/alerts` returns `{ alert{id,seen,triggeredAt,messageEn,messageAr}, watch, product{id,nameEn,nameAr,sizeValue,sizeUnit}, store{id,nameEn,nameAr}, priceKwd, observedAt, hint, stats }`. **`hint` and `stats` are `null` on alerts older than migration 0003.** | Alert card shows product, store, price, hint badge and 30-day low/avg/high. If `stats` is null the localized server message is shown instead; if `hint` is null no badge is shown (`AlertCard`). |
+| Receipt status | `GET /api/receipts/:id?deviceId=` returns `summary { lines, saved, held, waiting, newItems }` and `lines[]` with `status`, `method`, `product`, `observation`. Poll every 30-60 s while `waiting > 0`. | Result screen is driven by this response (`ReceiptResult`). |
+| Receipt list | `GET /api/receipts?deviceId=&limit=` | "Your recent scans" (`ReceiptHistoryList`). Also where a cancelled or timed-out scan is found. |
+| Recent real prices | `GET /api/prices/recent?limit=` returns only real receipt / shelf-tag prices (no estimates, no quarantined). Row: `{ observationId, product, store, priceKwd, previousPriceKwd, observedAt, evidence, isPromo }`. | The verified feed can use this directly. Every row is real, so no "Estimate" row ever appears there. Arrows may use `previousPriceKwd`. |
+| Trust labels | **< 0.6 Estimate, 0.6 to < 0.8 Recent, >= 0.8 Verified** | `PriceBadge` implements this one rule everywhere a `trust` value exists (replaces the earlier `sourceMix` rule in section 7). |
+| Cancelling a scan | The server keeps processing after the browser disconnects, so **a cancelled scan is still saved.** | Never auto-resubmit after Cancel or a timeout. "Stop waiting" explains this and points to Your recent scans (`ScanWaiting`, `ScanError`). |
+| Store rows | `areaEn` / `areaAr` (not `area`), `type`, `lat`/`lng` (null for online), `deliveryFeeKwd`, `minOrderKwd`, `coordsApproximate` | Area picker and store chooser use `areaEn` / `areaAr`. |
+| Auto-promotion | `autoPromoted[]` items: `{ pendingId, rawText, action: 'created' \| 'merged', productId, productNameEn, backfilledLines, backfilledObservations }` | New-product card copy differs for created vs merged. English name only in the API. |
+| Substitutions | `plan.substitutions[]` carry English names only | Arabic UI looks the replacement's Arabic name up in `itemsPerStore` lines and falls back to English. |
+
+### Implementation status (presentational components, not wired to anything)
+
+Created, type-checked and visually verified at 360 and 390 px in English and Arabic. **Nothing fetches data and `App.tsx` / the manual scanner are untouched.**
+
+| Area | Files |
+|---|---|
+| Types and helpers | `src/types/api.ts`, `src/utils/apiFormat.ts`, `src/i18nBasketAlerts.ts` (two spread lines in `src/i18n.ts`) |
+| Shared UI | `src/components/ui/`: `PriceBadge`, `QtyStepper`, `SearchField`, `BottomSheet`, `EmptyState`, `ErrorState`, `Skeleton` |
+| Basket Optimizer | `src/components/basket/`: `BasketScreen` (entry), `ProductResultRow`, `BasketItemRow`, `LocationChip`, `LocationSheet`, `PlanCard`, `PlanBreakdown` |
+| Price Alerts | `src/components/alerts/`: `AlertsScreen` (entry), `AlertCard`, `WatchCard`, `AddWatchSheet`; optional `alertsBadge` prop on `BottomNav` |
+| Automatic scan | `src/components/receipt/`: `ReceiptResult` (entry), `ReceiptLineRow`, `lineOutcome.ts`, `ScanWaiting`, `ScanError`, `ReceiptHistoryList` |
+
+### Props the frontend developer passes
+
+- **`BasketScreen`**: `searchQuery`, `searchResults: ProductListItem[]`, `searchStatus`, `items: BasketItem[]`, `location: SelectedLocation | null`, `locationSheetOpen`, `areaOptions: LocationOption[]`, `locating?`, `locationDenied?`, `plans: BasketPlan[] | null`, `planStatus: 'idle' | 'loading' | 'ready' | 'error'` (`idle` shows the builder), plus callbacks `onSearchChange`, `onAddProduct`, `onQtyChange`, `onToggleSubstitute`, `onRemove`, `onOpenLocation`, `onCloseLocation`, `onUseMyLocation`, `onPickArea`, `onFindPlan`, `onEditBasket`, `onRetry`.
+- **`AlertsScreen`**: `alerts: AlertEntry[]`, `watches: WatchCardData[]` (the frontend joins `currentBest` from the price data), `status`, `busyAlertIds?`, `busyWatchIds?`, `addSheet { open, query, results, resultsStatus, selected, submitting?, submitError? }`, plus `onMarkSeen`, `onRemoveWatch`, `onOpenAddWatch`, `onCloseAddWatch`, `onAddQueryChange`, `onSelectProduct`, `onSubmitWatch(productId, targetKwd)`, `onRetry`.
+- **`ReceiptResult`**: `receipt: ReceiptDetail`, `refreshing?`, `learnedAliases?`, `autoPromoted?`, `alerts?` (already filtered to this device), `stores?`, `choosingStore?`, `onChooseStore?`, `onScanAnother`, `onViewAlerts?`, `onRetry?`.
+- **`ScanWaiting`**: `elapsedSeconds`, `onStopWaiting?`. **`ScanError`**: `kind: ScanErrorKind`, `retryAfterSeconds?`, `onRetry?`, `onSecondary?`. **`ReceiptHistoryList`**: `receipts`, `status`, `onOpen`, `onRetry?`.
+
+### Open items after this update
+
+- `Layout` does not yet pass `alertsBadge` to `BottomNav` (needs the unseen-alert count from the frontend state).
+- The frontend must implement the HTTP-status to `ScanErrorKind` mapping (section 4.4), the timer for `ScanWaiting`, and the 30-60 s receipt polling.
+- Still open for Abdullah: a way to be notified of newly fired alerts (polling `GET /api/alerts?unseen=1` is assumed).
+
 ---
 
 ## 0. Golden rules for this phase
@@ -38,7 +83,7 @@ Design language is unchanged: see `docs/UI_UX_HANDOFF.md` (palette, Inter + IBM 
 | D2 | One catalogue or two? Local ids (`'mishref-coop'`) and server ids (`3`) differ. | **When automatic is on, the server is the only catalogue.** Do not mix local seed products with server products. |
 | D3 | Does the manual review screen survive? | **Yes until D1 flips.** Afterwards it becomes an optional "Report a mistake" (API docs: "can come later"). |
 | D4 | Failure fallback: when `/api/scan` returns 503/502/network error, fall back to the manual flow or show an error? | **Show the error state (section 4) with Retry; offer "Use demo receipt" only in demo mode.** Silent fallback would mix local and server data. |
-| D5 | Where does "Recent prices" come from? There is **no recent-scans endpoint**. | **"Your recent scans" from the scan reports stored locally per device, plus "Browse prices" via `GET /api/products`.** Or ask Abdullah for `GET /api/prices/recent`. |
+| D5 | Where does "Recent prices" come from? **Resolved:** `GET /api/prices/recent` (real prices) and `GET /api/receipts?deviceId=` (this device's scans). | **"Your recent scans" from the scan reports stored locally per device, plus "Browse prices" via `GET /api/products`.** Or ask Abdullah for `GET /api/prices/recent`. |
 | D6 | Location for the optimiser | **Geolocation with an "area picker" fallback** built from `GET /api/stores` (`area`). |
 
 ---
@@ -199,7 +244,7 @@ Merged into 4.3. If every line is saved: hero *"Receipt saved"*, tiles, then **S
 
 **API:** `POST /api/watchlist {deviceId, productId, targetPriceKwd}` · `GET /api/watchlist?deviceId=` · `GET /api/alerts?deviceId=&unseen=1` (bilingual `messageEn`/`messageAr`; hint `buy_now` | `lower_seen_recently`; stats min/avg/max) · `POST /api/alerts/:id/seen {deviceId}`.
 
-**No endpoint exists to delete a watch.** Design includes a Remove action, but it ships only if Abdullah adds one (section 9).
+**Remove** is now supported (`DELETE /api/watchlist/:id?deviceId=`; see the update section at the top). Inline two-step confirm, past alerts are kept.
 
 ### 6.1 Layout (two sections on one scrolling screen)
 

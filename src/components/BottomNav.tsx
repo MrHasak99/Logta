@@ -13,9 +13,11 @@ const TABS: { id: TabId; label: TKey; icon: LucideIcon }[] = [
 interface Props {
   active: TabId
   onChange: (tab: TabId) => void
+  /** Number of unseen price alerts. Shown as a badge on the Alerts tab; hidden at 0 or when omitted. */
+  alertsBadge?: number
 }
 
-export default function BottomNav({ active, onChange }: Props) {
+export default function BottomNav({ active, onChange, alertsBadge }: Props) {
   const { t } = useApp()
   return (
     <nav
@@ -36,11 +38,20 @@ export default function BottomNav({ active, onChange }: Props) {
                 }`}
               >
                 <span
-                  className={`flex h-8 w-14 items-center justify-center rounded-full transition-all duration-200 ${
+                  className={`relative flex h-8 w-14 items-center justify-center rounded-full transition-all duration-200 ${
                     isActive ? 'bg-brand text-navy shadow-[0_6px_14px_-6px_rgb(34_197_139/0.8)]' : 'group-hover:bg-brand-light'
                   }`}
                 >
                   <Icon size={20} strokeWidth={isActive ? 2.5 : 2} aria-hidden="true" />
+                  {id === 'alerts' && !!alertsBadge && alertsBadge > 0 && (
+                    <span
+                      role="status"
+                      aria-label={t('alertsBadgeLabel', { n: alertsBadge })}
+                      className="absolute -top-0.5 end-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-gold px-1 text-[11px] leading-none font-bold text-navy ring-2 ring-white"
+                    >
+                      {alertsBadge > 9 ? '9+' : alertsBadge}
+                    </span>
+                  )}
                 </span>
                 <span className="max-w-full truncate leading-tight">{t(label)}</span>
               </button>
